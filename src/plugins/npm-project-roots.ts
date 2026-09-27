@@ -5,10 +5,6 @@ import path from "node:path";
 import { isNotFoundPathError } from "../infra/path-guards.js";
 import { resolvePluginNpmProjectsDir } from "./install-paths.js";
 
-function isMissing(error: unknown): boolean {
-  return isNotFoundPathError(error);
-}
-
 function sortPaths(paths: string[]): string[] {
   return paths.toSorted((left, right) => left.localeCompare(right));
 }
@@ -24,7 +20,7 @@ export function listManagedPluginNpmProjectRootsSync(npmRoot: string): string[] 
         .map((entry) => path.join(projectsDir, entry.name)),
     );
   } catch (error) {
-    if (isMissing(error)) {
+    if (isNotFoundPathError(error)) {
       return [];
     }
     throw error;
@@ -41,7 +37,7 @@ async function listManagedPluginNpmProjectRoots(npmRoot: string): Promise<string
         .map((entry) => path.join(projectsDir, entry.name)),
     );
   } catch (error) {
-    if (isMissing(error)) {
+    if (isNotFoundPathError(error)) {
       return [];
     }
     throw error;

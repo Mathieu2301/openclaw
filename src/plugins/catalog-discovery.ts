@@ -37,13 +37,6 @@ function indexClawHubPlugins(
   return index;
 }
 
-function findLocalPlugin(
-  plugin: ClawHubPluginCatalogEntry,
-  index: ReadonlyMap<string, PluginCatalogEntry>,
-): PluginCatalogEntry | undefined {
-  return index.get(normalizedAlias(plugin.packageName) ?? "");
-}
-
 function projectLocalFacts(
   plugin: PluginCatalogEntry | undefined,
   mutationAllowed: boolean,
@@ -132,7 +125,7 @@ export function joinClawHubPluginCatalog(params: {
 }): PluginDiscoveryEntry[] {
   const localIndex = indexClawHubPlugins(params.local.plugins);
   const remote = params.remote.map((plugin) => {
-    const localPlugin = findLocalPlugin(plugin, localIndex);
+    const localPlugin = localIndex.get(normalizedAlias(plugin.packageName) ?? "");
     return {
       id: encodePluginDiscoveryId(plugin.packageName),
       catalog: {
