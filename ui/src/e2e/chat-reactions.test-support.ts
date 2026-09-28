@@ -119,7 +119,7 @@ I’ve grouped the review notes so everyone can add feedback in one place.`,
     ],
     methodResponses: {
       "chat.reactions.list": reactionList(),
-      "chat.reactions.set": { ok: true },
+      "chat.reactions.set": { ok: true, changed: true },
       "chat.reactions.people": {
         sessionId: reactionSessionId,
         messageId: agentReactionMessageId,

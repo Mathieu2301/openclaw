@@ -129,6 +129,8 @@ describe("message reaction controls", () => {
     const { request, element } = await setup();
     button("Add reaction").click();
     await element.updateComplete;
+    expect(container.querySelector("openclaw-modal-dialog")).toBeNull();
+    expect(container.querySelectorAll(".chat-reaction-picker button")).toHaveLength(8);
     const search = container.querySelector<HTMLInputElement>("input[type=search]")!;
     search.value = "rocket";
     search.dispatchEvent(new InputEvent("input", { bubbles: true }));
@@ -143,7 +145,7 @@ describe("message reaction controls", () => {
       emoji: "🚀",
       active: true,
     });
-    expect(container.querySelector("openclaw-modal-dialog")).toBeNull();
+    expect(container.querySelector("wa-popup")).toBeNull();
   });
 
   it("lets readers inspect paginated people without a write and discards details after navigation", async () => {

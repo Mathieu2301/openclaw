@@ -80,8 +80,10 @@ Normal agent-run final answers should be durable because the embedded runtime wr
 ## Message reactions in Control UI
 
 Signed-in participants can react to saved human and assistant messages with emoji.
-Use **Add reaction** beneath a message, or select an existing emoji to add your
-reaction. Select a highlighted emoji again to remove your own reaction. Each
+Use **Add reaction** beneath a message to open a compact picker beside the button.
+Choose a common emoji immediately, or use the search box beneath the choices to
+find another. You can also select an existing emoji to add your reaction. Select
+a highlighted emoji again to remove your own reaction. Each
 person or agent counts once per emoji, even if a request is retried.
 
 Reaction chips show the emoji and the number of people and agents who selected it. Hover or

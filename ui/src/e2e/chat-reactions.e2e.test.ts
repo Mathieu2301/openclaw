@@ -51,6 +51,35 @@ async function expectSharedActionRow(row: Locator): Promise<void> {
   expect(geometry.tail).toEqual(["Copy as markdown", "Reply to message"]);
 }
 
+async function expectCompactPicker(picker: Locator) {
+  await picker.waitFor({ state: "visible" });
+  const geometry = await picker.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    const choices = element.querySelector(".chat-reaction-picker")!.getBoundingClientRect();
+    const search = element.querySelector("input")!.getBoundingClientRect();
+    return {
+      width: box.width,
+      height: box.height,
+      left: box.left,
+      right: box.right,
+      viewport: window.innerWidth,
+      choicesBottom: choices.bottom,
+      searchTop: search.top,
+      modal: element.getAttribute("aria-modal"),
+      count: element.querySelectorAll(".chat-reaction-picker button").length,
+      editing: element.ownerDocument.activeElement instanceof HTMLInputElement,
+    };
+  });
+  expect(geometry.width).toBeLessThanOrEqual(280);
+  expect(geometry.height).toBeLessThanOrEqual(260);
+  expect(geometry.left).toBeGreaterThanOrEqual(8);
+  expect(geometry.right).toBeLessThanOrEqual(geometry.viewport - 8);
+  expect(geometry.searchTop).toBeGreaterThanOrEqual(geometry.choicesBottom);
+  expect(geometry.modal).not.toBe("true");
+  expect(geometry.count).toBe(8);
+  expect(geometry.editing).toBe(false);
+}
+
 suite.define(() => {
   it("keeps reactions, Copy, and final Reply in one row across desktop and mobile while syncing shared state", async () => {
     const context = await suite.newBrowserContext({
@@ -103,12 +132,21 @@ suite.define(() => {
       await addReaction.focus();
       await page.keyboard.press("Enter");
       const picker = page.getByRole("dialog", { name: "Add reaction", exact: true });
-      await picker.waitFor({ state: "visible" });
+      await expectCompactPicker(picker);
+      expect(
+        await picker
+          .getByRole("button", { name: "thumbsup", exact: true })
+          .evaluate((button) => document.activeElement === button),
+      ).toBe(true);
       expect(await addReaction.getAttribute("aria-expanded")).toBe("true");
       await page.keyboard.press("Escape");
       await picker.waitFor({ state: "hidden" });
       expect(await addReaction.getAttribute("aria-expanded")).toBe("false");
       expect(await addReaction.evaluate((button) => document.activeElement === button)).toBe(true);
+      await addReaction.click();
+      await expectCompactPicker(picker);
+      await page.locator(".agent-chat__composer-combobox textarea").click();
+      await picker.waitFor({ state: "hidden" });
       const initial = await gateway.getRequests("chat.reactions.list");
       const ids = initial.flatMap((request) => requireRecord(request.params).messageIds);
       expect(ids).toContain(humanReactionMessageId);
@@ -127,7 +165,7 @@ suite.define(() => {
       });
       expect(await thumb.isDisabled()).toBe(true);
       await gateway.setMethodResponse("chat.reactions.list", reactionList(true));
-      await gateway.resolveDeferred("chat.reactions.set", { ok: true });
+      await gateway.resolveDeferred("chat.reactions.set", { ok: true, changed: true });
       await agent.locator('[data-emoji="👍"][aria-pressed="true"]:not(:disabled)').waitFor();
       expect(await thumb.locator("..").textContent()).toContain("4");
 
@@ -168,7 +206,7 @@ suite.define(() => {
         active: false,
       });
       await gateway.setMethodResponse("chat.reactions.list", reactionList(false, true));
-      await gateway.resolveDeferred("chat.reactions.set", { ok: true });
+      await gateway.resolveDeferred("chat.reactions.set", { ok: true, changed: true });
       await agent.locator('[data-emoji="👍"][aria-pressed="false"]:not(:disabled)').waitFor();
       expect(await thumb.locator("..").textContent()).toContain("4");
 
@@ -239,6 +277,15 @@ suite.define(() => {
         const box = await count.boundingBox();
         expect(box?.width).toBeGreaterThanOrEqual(40);
         expect(box?.height).toBeGreaterThanOrEqual(40);
+        const add = page.getByRole("button", { name: "Add reaction", exact: true }).last();
+        await add.tap();
+        const picker = page.getByRole("dialog", { name: "Add reaction", exact: true });
+        await expectCompactPicker(picker);
+        await picker.getByRole("searchbox", { name: "Search emoji" }).fill("rocket");
+        await picker.getByRole("button", { name: "rocket", exact: true }).tap();
+        await picker.waitFor({ state: "hidden" });
+        const write = requireRecord((await gateway.waitForRequest("chat.reactions.set")).params);
+        expect(write).toMatchObject({ emoji: "🚀", active: true });
         await count.tap();
         await page
           .getByRole("dialog", { name: "Who reacted", exact: true })
@@ -248,7 +295,7 @@ suite.define(() => {
           .locator(".chat-reaction-people")
           .getByText("Atlas (agent)", { exact: true })
           .waitFor();
-        expect(await gateway.getRequests("chat.reactions.set")).toHaveLength(0);
+        expect(await gateway.getRequests("chat.reactions.set")).toHaveLength(1);
       } finally {
         await suite.closeBrowserContext(context);
       }

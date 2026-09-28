@@ -1,9 +1,11 @@
+import WaPopup from "@awesome.me/webawesome/dist/components/popup/popup.js";
 import { html, nothing, svg, type PropertyValues, type TemplateResult } from "lit";
 import { property, state as litState } from "lit/decorators.js";
 import type {
   ChatReactionPerson,
   ChatReactionSummary,
 } from "../../../../../packages/gateway-protocol/src/chat-reactions.js";
+import { configureAnchoredPopup } from "../../../components/anchored-overlay.ts";
 import { strokeIcon } from "../../../components/icons-tools.ts";
 import { icons } from "../../../components/icons.ts";
 import "../../../components/modal-dialog.ts";
@@ -32,6 +34,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
   @litState() private nextCursor?: string;
   private unsubscribe?: () => void;
   private scopeVersion = -1;
+  private pickerNeedsFocus = false;
   private peopleGeneration = 0;
 
   override connectedCallback() {
@@ -65,7 +68,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
   }
 
   private closeDialogs() {
-    this.pickerOpen = false;
+    this.closePicker();
     this.peopleEmoji = null;
     this.peopleGeneration += 1;
     this.people = [];
@@ -79,7 +82,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
     if (!state || state.pending || state.loading || !this.controller?.canReact) {
       return;
     }
-    this.pickerOpen = false;
+    this.closePicker(this.pickerOpen);
     const active = !state.reactions.some(
       (reaction) => reaction.emoji === emoji && reaction.reactedByMe,
     );
@@ -155,48 +158,78 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
     });
   }
 
+  private closePicker(restoreFocus = false) {
+    this.pickerOpen = false;
+    this.pickerNeedsFocus = false;
+    this.ownerDocument.removeEventListener("pointerdown", this.dismissPickerOutside, true);
+    this.ownerDocument.removeEventListener("focusin", this.dismissPickerOutside, true);
+    if (restoreFocus) {
+      this.querySelector<HTMLButtonElement>(".chat-reaction-add")?.focus({ preventScroll: true });
+    }
+  }
+
+  private readonly dismissPickerOutside = (event: Event) => {
+    const path = event.composedPath();
+    const popup = this.querySelector("wa-popup");
+    const trigger = this.querySelector(".chat-reaction-add");
+    if ((!popup || !path.includes(popup)) && (!trigger || !path.includes(trigger))) {
+      this.closePicker();
+    }
+  };
+
+  private togglePicker() {
+    if (this.pickerOpen) {
+      this.closePicker();
+      return;
+    }
+    this.query = "";
+    this.pickerOpen = true;
+    this.pickerNeedsFocus = true;
+    this.ownerDocument.addEventListener("pointerdown", this.dismissPickerOutside, true);
+    this.ownerDocument.addEventListener("focusin", this.dismissPickerOutside, true);
+  }
+
+  protected override updated() {
+    const popup = this.querySelector<WaPopup>("wa-popup");
+    const trigger = this.querySelector<HTMLButtonElement>(".chat-reaction-add");
+    if (popup && trigger && this.pickerOpen) {
+      configureAnchoredPopup(popup, trigger, "top");
+    }
+  }
+
+  private readonly focusPicker = () => {
+    if (this.pickerOpen && this.pickerNeedsFocus) {
+      this.pickerNeedsFocus = false;
+      // Emoji choices come first; do not summon the mobile keyboard until Search is tapped.
+      this.querySelector<HTMLButtonElement>(".chat-reaction-picker button")?.focus({
+        preventScroll: true,
+      });
+    }
+  };
+
   private renderPicker() {
     const names = this.query.trim()
       ? suggestEmoji(this.query.trim().toLowerCase().replace(/^:/u, ""))
       : QUICK_EMOJI;
-    return html`<openclaw-modal-dialog
-      label=${t("chat.reactions.add")}
-      @modal-cancel=${() => {
-        this.pickerOpen = false;
-      }}
-    >
-      <section class="chat-reaction-dialog">
-        <header>
-          <h2>${t("chat.reactions.add")}</h2>
-          <button
-            type="button"
-            class="btn btn--icon"
-            aria-label=${t("common.close")}
-            @click=${() => {
-              this.pickerOpen = false;
-            }}
-          >
-            ${icons.x}
-          </button>
-        </header>
-        <input
-          class="chat-reaction-search"
-          type="search"
-          aria-label=${t("chat.reactions.search")}
-          placeholder=${t("chat.reactions.search")}
-          autofocus
-          .value=${this.query}
-          @input=${(event: InputEvent) => {
-            this.query = (event.target as HTMLInputElement).value;
-          }}
-        />
+    return html`<wa-popup active @wa-reposition=${this.focusPicker}>
+      <section
+        class="chat-reaction-popover"
+        role="dialog"
+        aria-label=${t("chat.reactions.add")}
+        @keydown=${(event: KeyboardEvent) => {
+          if (event.key === "Escape" && !event.isComposing) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.closePicker(true);
+          }
+        }}
+      >
         <div class="chat-reaction-picker" role="group" aria-label=${t("chat.reactions.add")}>
           ${names.map((name) => {
             const emoji = emojiForShortcode(name);
             return emoji
               ? html`<button
                   type="button"
-                  title=${name}
                   aria-label=${name}
                   @click=${() => this.selectEmoji(emoji)}
                 >
@@ -206,8 +239,19 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
           })}
         </div>
         ${names.length ? nothing : html`<p role="status">${t("chat.reactions.empty")}</p>`}
+        <input
+          class="chat-reaction-search"
+          type="search"
+          aria-label=${t("chat.reactions.search")}
+          placeholder=${t("chat.reactions.search")}
+          autocomplete="off"
+          .value=${this.query}
+          @input=${(event: InputEvent) => {
+            this.query = (event.target as HTMLInputElement).value;
+          }}
+        />
       </section>
-    </openclaw-modal-dialog>`;
+    </wa-popup>`;
   }
 
   private renderPeople(reactions: ChatReactionSummary[]) {
@@ -280,7 +324,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
         )}
         ${
           this.controller?.canReact
-            ? html`<openclaw-tooltip content=${t("chat.reactions.add")}
+            ? html`<openclaw-tooltip content=${t("chat.reactions.add")} .disabled=${this.pickerOpen}
                 ><button
                   type="button"
                   class="chat-reaction-add"
@@ -288,10 +332,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
                   aria-haspopup="dialog"
                   aria-expanded=${String(this.pickerOpen)}
                   ?disabled=${disabled}
-                  @click=${() => {
-                    this.query = "";
-                    this.pickerOpen = true;
-                  }}
+                  @click=${() => this.togglePicker()}
                 >
                   <span class="chat-reaction-add-icon" aria-hidden="true"
                     >${ADD_REACTION_ICON}</span
