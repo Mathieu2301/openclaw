@@ -91,8 +91,9 @@ When an owned managed Bun Gateway serves a different package root from the CLI,
 `openclaw update` advances the Gateway installation in place and leaves the
 invoking CLI installation unchanged. The updater validates that service's actual
 Bun for Bun 1.4+ and WAL-safe `node:sqlite`, without comparing its emulated Node
-version to `engines.node`. The existing service install/restart path retains the
-recorded Bun pin. Node split-root routing is unchanged, and a path under
+version to `engines.node`. If the updater runs on Node, that Node must also meet
+the target package's Node and SQLite requirements because finalization uses it.
+The existing service install/restart path retains the recorded Bun pin. Node split-root routing is unchanged, and a path under
 `~/.openclaw` alone does not establish Bun global-install ownership.
 
 First installs and updater staging without a persistent Node require `OPENCLAW_PACKAGE_BUN_LAUNCHER` set to the absolute Bun executable that launches the CLI. The updater sets it automatically when running under Bun; an app must set it for its first `bun add -g --trust openclaw@<version>`. Preinstall validates that launcher as Bun 1.4+. Without the marker, preinstall still requires a persistent Node; a Node found on PATH must satisfy the package's Node requirements even when the marker is set.

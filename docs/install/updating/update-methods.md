@@ -80,7 +80,9 @@ For package installs with an owned managed Bun Gateway at a different root,
 installation unchanged. It validates the service's actual Bun executable for
 Bun 1.4+ and WAL-safe `node:sqlite`, and retains its recorded runtime pin through
 service installation and restart. Bun's emulated Node version is never compared
-to the target's `engines.node` requirement.
+to the target's `engines.node` requirement. When the updater runs on Node, its
+Node must also pass the target's engine and SQLite checks before package
+replacement, because finalization runs under the updater runtime.
 
 Node services keep the existing routing: a writable owned definition normally
 moves to the invoking CLI installation; Windows, overridden or nonwritable

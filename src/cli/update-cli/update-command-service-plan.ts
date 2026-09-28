@@ -390,12 +390,9 @@ export async function resolvePackageRuntimePreflight(params: {
   }
 > {
   return await withCommandProcessScope(async () => {
+    const verdict = params.service?.serviceUpdateVerdict;
     const nodeRunner = normalizeOptionalString(
-      params.alreadyCurrent &&
-        !(
-          params.service?.serviceUpdateVerdict?.kind === "owned" &&
-          params.service.serviceUpdateVerdict.requiresInstallRootRefresh
-        )
+      params.alreadyCurrent && !(verdict?.kind === "owned" && verdict.requiresInstallRootRefresh)
         ? (params.service?.serviceNodeRunner ?? params.nodeRunner)
         : params.nodeRunner,
     );
@@ -426,7 +423,11 @@ export async function resolvePackageRuntimePreflight(params: {
       const runtimeEnv = params.service?.serviceEnv ?? process.env;
       try {
         await resolvePinnedDaemonRuntimePath(nodeRunner, "bun", runtimeEnv);
-        return ok({ ...unchanged(), targetVersion: target.version });
+        // Finalization keeps the updater runtime; service recovery cannot replace it.
+        const updater = process.versions.bun
+          ? ok<PackageRuntimePreflight, string>({})
+          : await resolvePackageRuntimePreflight({ target, timeoutMs: params.timeoutMs });
+        return updater.ok ? ok({ ...unchanged(), targetVersion: target.version }) : updater;
       } catch (error) {
         return resultError(error instanceof Error ? error.message : String(error));
       }
@@ -444,9 +445,7 @@ export async function resolvePackageRuntimePreflight(params: {
       return ok(unchangedRuntime);
     }
     const canRefreshCurrentService =
-      params.service?.running &&
-      params.service.serviceUpdateVerdict?.kind === "owned" &&
-      params.service.serviceUpdateVerdict.refreshDefinition;
+      params.service?.running && verdict?.kind === "owned" && verdict.refreshDefinition;
     const fallbackNodeRunner =
       params.fallbackNodeRunner ??
       (params.shouldRestart &&
@@ -501,7 +500,6 @@ export async function resolvePackageRuntimePreflight(params: {
       : "unspecified";
     const recommendation = minimumSupportedNodeVersion(engineRange ?? "*");
     const requirement = target.nodeEngine ? `Node ${target.nodeEngine}` : "a working Node runtime";
-    const verdict = params.service?.serviceUpdateVerdict;
     const context =
       verdict?.kind === "owned" && params.service?.serviceEnv
         ? resolveServiceRecoveryContext({

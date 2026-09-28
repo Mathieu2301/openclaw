@@ -184,8 +184,10 @@ An owned managed **Bun** Gateway at a different package root uses the existing
 service-root update route: only the Gateway installation advances, and the
 invoking CLI installation stays unchanged. The updater validates the service's
 actual Bun executable against the Bun 1.4+ and WAL-safe `node:sqlite` requirements;
-Bun's emulated Node version is not checked against `engines.node`. Bun-owned
-package-manager probes and installs use that verified executable, and the
+Bun's emulated Node version is not checked against `engines.node`. If the updater
+runs on Node, its Node must also satisfy the target package's engine and SQLite
+requirements before package replacement, because finalization uses that runtime.
+Bun-owned package-manager probes and installs use that verified executable, and the
 existing install/restart path retains the recorded runtime pin. A path under
 `~/.openclaw` alone does not establish Bun package-manager ownership. See
 [Bun-only installs](/install/bun-compatibility#bun-only-installs).

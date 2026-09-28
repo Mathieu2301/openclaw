@@ -96,6 +96,12 @@ describe("package runtime compatibility guidance", () => {
   it.each([true, false])(
     "validates the selected service Bun independently of Node engines (supported=%s)",
     async (supported) => {
+      vi.stubGlobal(
+        "process",
+        Object.create(process, {
+          versions: { value: { ...process.versions, bun: "1.4.3" } },
+        }),
+      );
       const bun = "/service/bin/bun";
       const env = { OPENCLAW_SQLITE_LIBRARY: "/service/sqlite.dylib" };
       vi.mocked(resolvePinnedDaemonRuntimePath).mockReset();
