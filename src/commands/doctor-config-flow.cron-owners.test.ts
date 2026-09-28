@@ -22,6 +22,7 @@ import {
   prepareDoctorContext,
   withDoctorConfigMaintenance,
 } from "./doctor-config-flow.test-support.js";
+import { maybeRepairLegacyCronStore } from "./doctor/cron/index.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -242,7 +243,7 @@ it("leaves SQLite and legacy JSON owners unchanged on ordinary cron startup", as
     seedJobs(storePath);
     openOpenClawStateDatabase()
       .db.prepare(
-        "UPDATE cron_jobs SET state_json = json_set(state_json, '$.nextRunAtMs', 123) WHERE store_key = ? AND job_id = 'sql-owner'",
+        "UPDATE cron_jobs SET state_json = json_set(state_json, '$.nextRunAtMs', 123), job_json = json_set(job_json, '$.notify', json('true')) WHERE store_key = ? AND job_id = 'sql-owner'",
       )
       .run(cronStoreKey(storePath));
     const legacy = `${JSON.stringify({ version: 1, jobs: [makeCronJob({ id: "legacy-json", enabled: false })] })}\n`;
@@ -277,6 +278,109 @@ it("leaves SQLite and legacy JSON owners unchanged on ordinary cron startup", as
   });
 });
 
+it.each([
+  { name: "missing", mode: undefined, expected: "announce" },
+  { name: "null", mode: null, expected: "announce" },
+  { name: "retired alias", mode: "deliver", expected: "announce" },
+  { name: "announce casing", mode: " ANNOUNCE ", expected: "announce" },
+  { name: "none casing", mode: " NoNe ", expected: "none" },
+  { name: "webhook casing", mode: " WeBhOoK ", expected: "webhook" },
+])(
+  "keeps $name delivery visible and requires Doctor before execution",
+  async ({ mode, expected }) => {
+    await withOpenClawTestState(
+      { label: "cron-delivery-doctor", env: { OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1" } },
+      async (state) => {
+        await state.writeConfig(sourceConfig());
+        const storePath = state.statePath("cron", "jobs.json");
+        saveCronJobsStoreWithRevisionNative(storePath, {
+          version: 1,
+          jobs: [
+            makeCronJob({
+              id: "delivery-repair",
+              schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
+              payload: { kind: "agentTurn", message: "synthetic delivery repair", toolsAllow: [] },
+              delivery: { mode: "announce" },
+              state: { lastRunAtMs: 123, lastRunStatus: "ok" },
+            }),
+          ],
+        });
+        const db = openOpenClawStateDatabase().db;
+        const definition = JSON.parse(rows(storePath)[0]!.job_json);
+        definition.delivery = {
+          ...(mode === undefined ? {} : { mode }),
+          to: expected === "webhook" ? "https://example.invalid/hook" : "synthetic-target",
+          ...(expected === "webhook" ? {} : { channel: "telegram" }),
+        };
+        definition.authoredNote = "preserve this definition";
+        db.prepare("UPDATE cron_jobs SET job_json = ? WHERE store_key = ? AND job_id = ?").run(
+          JSON.stringify(definition),
+          cronStoreKey(storePath),
+          "delivery-repair",
+        );
+        const original = rows(storePath);
+        const { cron, scheduler, execute } = createCron(storePath);
+        try {
+          await cron.start();
+          expect(cron.getJob("delivery-repair")?.delivery).toEqual(definition.delivery);
+          await expect(cron.run("delivery-repair", "force")).rejects.toThrow(
+            "delivery requires an explicit mode",
+          );
+          expect(execute).not.toHaveBeenCalled();
+          expect(rows(storePath).map(({ job_json, agent_id }) => ({ job_json, agent_id }))).toEqual(
+            original.map(({ job_json, agent_id }) => ({ job_json, agent_id })),
+          );
+          expect(await backups()).toEqual([]);
+          const beforeDoctor = rows(storePath);
+
+          const ctx = await repair(state);
+          await withDoctorConfigMaintenance(() =>
+            maybeRepairLegacyCronStore({
+              cfg: ctx.cfg,
+              options: ctx.options,
+              prompter: ctx.prompter,
+            }),
+          );
+          const repaired = rows(storePath)[0]!;
+          expect(JSON.parse(repaired.job_json)).toMatchObject({
+            agentId: "ops",
+            authoredNote: "preserve this definition",
+            delivery: { ...definition.delivery, mode: expected },
+          });
+          expect(repaired.state_json).toBe(beforeDoctor[0]!.state_json);
+          expect(repaired.sort_order).toBe(original[0]!.sort_order);
+          const savedBackups = await backups();
+          expect(savedBackups).toHaveLength(1);
+          const backup = new DatabaseSync(savedBackups[0]!, { readOnly: true });
+          try {
+            expect(loadCronRows(backup, cronStoreKey(storePath))).toEqual(beforeDoctor);
+          } finally {
+            backup.close();
+          }
+          await withDoctorConfigMaintenance(() =>
+            maybeRepairLegacyCronStore({
+              cfg: ctx.cfg,
+              options: ctx.options,
+              prompter: ctx.prompter,
+            }),
+          );
+          expect(rows(storePath)).toEqual([repaired]);
+          await cron.start();
+          expect(cron.getJob("delivery-repair")?.delivery?.mode).toBe(expected);
+          await expect(cron.run("delivery-repair", "force")).resolves.toEqual({
+            ok: true,
+            ran: true,
+          });
+          expect(execute).toHaveBeenCalledOnce();
+        } finally {
+          cron.stop();
+          await scheduler.stop();
+        }
+      },
+    );
+  },
+);
+
 it.each(["ops", "research"])(
   "pins newly created jobs to the selected %s owner while legacy repair is pending",
   async (agentId) => {
@@ -306,7 +410,7 @@ it.each(["ops", "research"])(
   },
 );
 
-it.each(["health write", "preflight custom store"])(
+it.each(["health write", "preflight custom store", "health write with unsupported delivery"])(
   "pins the original owner before the %s and preserves recovery",
   async (entry) => {
     await withOpenClawTestState(
@@ -316,6 +420,14 @@ it.each(["health write", "preflight custom store"])(
         const storePath = state.statePath(customStore ? "custom-cron" : "cron", "jobs.json");
         await state.writeConfig(sourceConfig(customStore ? storePath : undefined));
         seedJobs(storePath);
+        const unsupportedDelivery = entry === "health write with unsupported delivery";
+        if (unsupportedDelivery) {
+          openOpenClawStateDatabase()
+            .db.prepare(
+              "UPDATE cron_jobs SET job_json = json_set(job_json, '$.delivery.mode', 'not-a-route') WHERE store_key = ? AND job_id = 'historical'",
+            )
+            .run(cronStoreKey(storePath));
+        }
         const original = rows(storePath);
         const originalGrant = openOpenClawStateDatabase()
           .db.prepare(
@@ -345,6 +457,7 @@ it.each(["health write", "preflight custom store"])(
         expect(JSON.parse(historical?.job_json ?? "null")).toMatchObject({
           agentId: "ops",
           authoredNote: "keep me",
+          ...(unsupportedDelivery ? { delivery: { mode: "not-a-route" } } : {}),
         });
         const repairedGrant = openOpenClawStateDatabase()
           .db.prepare(

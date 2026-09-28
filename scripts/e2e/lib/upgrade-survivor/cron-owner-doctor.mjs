@@ -13,6 +13,34 @@ const fixtureName = "cron-owner-fixture.json";
 const prefix = "owner-proof-";
 const sessionKey = "agent:ops:owner-proof-continuity";
 const sessionMarker = "Synthetic cron ownership upgrade continuity witness";
+const deliveryCases = [
+  {
+    name: "delivery-missing",
+    delivery: { channel: "telegram", to: "synthetic-target" },
+    mode: "announce",
+  },
+  {
+    name: "delivery-null",
+    delivery: { mode: null, channel: "telegram", to: "synthetic-target" },
+    mode: "announce",
+  },
+  {
+    name: "delivery-alias",
+    delivery: { mode: "deliver", channel: "telegram", to: "synthetic-target" },
+    mode: "announce",
+  },
+  {
+    name: "delivery-announce-case",
+    delivery: { mode: " ANNOUNCE ", channel: "telegram", to: "synthetic-target" },
+    mode: "announce",
+  },
+  { name: "delivery-none-case", delivery: { mode: " NoNe " }, mode: "none" },
+  {
+    name: "delivery-webhook-case",
+    delivery: { mode: " WeBhOoK ", to: "https://example.invalid/cron" },
+    mode: "webhook",
+  },
+];
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const writeJson = (file, value) =>
@@ -249,6 +277,15 @@ function seed(p) {
     ["explicit", { agentId: "research" }],
     ["session", { sessionKey: "agent:research:main" }],
     ["sql-owner", {}],
+    ...deliveryCases.map(({ name, delivery }) => [
+      name,
+      {
+        agentId: "ops",
+        sessionTarget: "isolated",
+        payload: { kind: "agentTurn", message: "Synthetic delivery migration", toolsAllow: [] },
+        delivery,
+      },
+    ]),
     ["json-import", {}],
   ].map(([name, owner], index) => ({
     id: `${prefix}${name}`,
@@ -315,7 +352,7 @@ function seed(p) {
         job.description,
         0,
         job.id === `${prefix}sql-owner` ? "research" : (job.agentId ?? null),
-        "systemEvent",
+        job.payload.kind,
         JSON.stringify({ ...definition, state: {} }),
         JSON.stringify(state),
         updatedAtMs,
@@ -378,6 +415,12 @@ function assertRepaired(fixture, observed) {
     ]) {
       assert.deepEqual(job[field], definition[field], `${definition.id} changed authored ${field}`);
     }
+    const deliveryCase = deliveryCases.find(({ name }) => definition.id === `${prefix}${name}`);
+    assert.deepEqual(
+      job.delivery,
+      deliveryCase ? { ...deliveryCase.delivery, mode: deliveryCase.mode } : definition.delivery,
+      `${definition.id} did not retain its intended canonical delivery`,
+    );
     assert.equal(job.enabled, false);
     assert.deepEqual(
       JSON.parse(row.state_json),

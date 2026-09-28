@@ -25,6 +25,29 @@ describe("cron stream watchers", () => {
     vi.useRealTimers();
   });
 
+  it("withholds an unrepaired stream without blocking its healthy sibling", async () => {
+    const warn = vi.fn();
+    const { fake, watchers } = createCronStreamWatcherFixture({ logger: { info: vi.fn(), warn } });
+    const invalid = job({ id: "invalid-delivery", delivery: { mode: "none" } });
+    Reflect.deleteProperty(invalid.delivery!, "mode");
+    try {
+      await watchers.reconcile([invalid, job({ id: "healthy-stream" })], true);
+      await settle();
+      expect(fake.spawn).toHaveBeenCalledOnce();
+      expect(watchers.inspect("healthy-stream")?.state).toBe("running");
+      expect(watchers.inspect("invalid-delivery")?.processAlive).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: "invalid-delivery",
+          err: expect.stringContaining("openclaw doctor --fix"),
+        }),
+        "cron-stream: reconcile start failed",
+      );
+    } finally {
+      await watchers.stopAll("shutdown");
+    }
+  });
+
   it("keeps lifecycle ownership when a diagnostic state write fails", async () => {
     const { fake, watchers } = createCronStreamWatcherFixture({
       updateState: vi.fn(async () => {

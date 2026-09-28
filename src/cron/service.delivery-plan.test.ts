@@ -88,18 +88,19 @@ describe("CronService delivery plan consistency", () => {
     });
   });
 
-  it("treats delivery object without mode as announce without reviving legacy relay fallback", async () => {
+  it("rejects an authored delivery object without a mode", async () => {
     await withCronService({}, async ({ cron, enqueueSystemEvent }) => {
-      const job = await addIsolatedAgentTurnJob(cron, {
-        name: "partial-delivery",
-        wakeMode: "next-heartbeat",
-        delivery: { channel: "telegram", to: "123" } as DeliveryOverride,
-      });
-
-      const result = await cron.run(job.id, "force");
-      expect(result).toEqual({ ok: true, ran: true });
+      const delivery: DeliveryOverride = { mode: "announce", channel: "telegram", to: "123" };
+      Reflect.deleteProperty(delivery, "mode");
+      await expect(
+        addIsolatedAgentTurnJob(cron, {
+          name: "partial-delivery",
+          wakeMode: "next-heartbeat",
+          delivery,
+        }),
+      ).rejects.toThrow("delivery requires an explicit mode");
+      expect(await cron.list()).toEqual([]);
       expect(enqueueSystemEvent).not.toHaveBeenCalled();
-      expect(cron.getJob(job.id)?.state.lastDeliveryStatus).toBe("unknown");
     });
   });
 
@@ -116,7 +117,7 @@ describe("CronService delivery plan consistency", () => {
         const job = await addIsolatedAgentTurnJob(cron, {
           name: "announce-delivered",
           wakeMode: "now",
-          delivery: { channel: "telegram", to: "123" } as DeliveryOverride,
+          delivery: { mode: "announce", channel: "telegram", to: "123" },
         });
 
         const result = await cron.run(job.id, "force");

@@ -68,6 +68,7 @@ import {
   rethrowSqliteSchemaVersionError,
 } from "./schema-safety.js";
 import {
+  canRepairCronDeliveryForDoctor,
   collectStoredCronCodexRuntimePolicyTargets,
   cronCodexRuntimePolicyTargetKey,
   normalizeStoredCronJobs,
@@ -202,7 +203,11 @@ export async function loadLegacyCronRepairState(params: {
   for (const job of currentJobs) {
     const jobId = normalizeOptionalString(job.id) ?? normalizeOptionalString(job.jobId);
     const sqlOwner = jobId ? sqlOwners.get(jobId) : undefined;
-    if (sqlOwner && projectCronOwner(job, undefined).kind === "unresolved") {
+    if (
+      sqlOwner &&
+      canRepairCronDeliveryForDoctor(job.delivery) &&
+      projectCronOwner(job, undefined).kind === "unresolved"
+    ) {
       job.agentId = sqlOwner;
     }
   }
@@ -320,17 +325,24 @@ export async function applyLegacyCronStoreRepair(params: {
         `Cron trigger script for ${job} uses legacy Code Mode APIs that cannot be safely converted; inspect the automation and update its trigger script manually to use direct tool calls.`,
     ),
   );
+  warnings.push(
+    ...normalized.unsupportedDeliveryModeJobs.map(
+      (job) =>
+        `Cron job ${job} has an unsupported delivery mode. Review its intended delivery and set mode to "none", "announce", or "webhook"; Doctor cannot infer the intended route.`,
+    ),
+  );
   const legacyWebhook = normalizeOptionalString(
     (params.cfg.cron as Record<string, unknown> | undefined)?.webhook,
   );
   const notifyMigration = migrateLegacyNotifyFallback({
-    jobs: state.rawJobs,
+    jobs: state.rawJobs.filter((job) => canRepairCronDeliveryForDoctor(job.delivery)),
     legacyWebhook,
   });
   warnings.push(...notifyMigration.warnings);
   const retirementChanges: string[] = [];
   if (resolveRetired) {
     for (const job of state.rawJobs) {
+      if (!canRepairCronDeliveryForDoctor(job.delivery)) continue;
       const payload = asOptionalRecord(job.payload);
       const jobId = normalizeOptionalStringifiedId(job.id);
       if (!payload || !jobId) {

@@ -665,17 +665,20 @@ describe("normalizeCronJobCreate", () => {
     expect(normalized.sessionTarget).toBe("isolated");
     expect(normalized.wakeMode).toBe("now");
   });
-  it("strips invalid delivery mode from partial delivery objects", () => {
-    const delivery = child(
-      createDefaulted(AGENT_TURN, {
+  it.each(["bogus", "deliver", null])(
+    "preserves invalid delivery mode %s so create and patch validation reject it",
+    (mode) => {
+      const created = createDefaulted(AGENT_TURN, {
         schedule: CRON_SCHEDULE,
-        delivery: { mode: "bogus", to: "123" },
-      }),
-      "delivery",
-    );
-    expect(delivery.mode).toBeUndefined();
-    expect(delivery.to).toBe("123");
-  });
+        delivery: { mode, to: "123" },
+      });
+      const patch = normalizePatch({ delivery: { mode, to: "123" } });
+      expect(child(created, "delivery")).toMatchObject({ mode, to: "123" });
+      expect(child(patch, "delivery")).toEqual({ mode, to: "123" });
+      expect(validateCronAddParams(created)).toBe(false);
+      expect(validateCronUpdateParams({ id: "job", patch })).toBe(false);
+    },
+  );
   it("stores current sessionTarget source context when context is available", () => {
     const normalized = createAgent({ sessionTarget: "current" }, "agent:main:discord:group:ops");
     expect(normalized.sessionTarget).toBe("current");

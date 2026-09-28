@@ -3,6 +3,7 @@ import type { CronActiveJobMarker } from "../active-jobs.js";
 import { resolveCronCompletionStatus } from "../completion-status.js";
 import { resolveCronJobConfigRevision } from "../config-revision.js";
 import { createCronRunDiagnosticsFromError } from "../run-diagnostics.js";
+import { assertCanonicalCronDeliveryMode } from "../store/delivery-codec.js";
 import {
   finishCronRunReceiptInDatabase,
   releaseLocalCronRunReceiptOwnership,
@@ -282,6 +283,7 @@ async function inspectManualRunPreflight(
   if (!job || (opts?.onExit && !matchesOnExitSchedule(job, opts.onExit.schedule))) {
     return { ok: true, ran: false, reason: "not-due" };
   }
+  assertCanonicalCronDeliveryMode(job.delivery);
   if (opts?.onExit && (!isJobEnabled(job) || job.state.autoDisabled)) {
     return { ok: true, ran: false, reason: "disabled" };
   }

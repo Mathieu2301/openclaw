@@ -84,6 +84,12 @@ it.each([false, true])(
         ["owner-proof-explicit", "research"],
         ["owner-proof-session", null],
         ["owner-proof-sql-owner", "research"],
+        ["owner-proof-delivery-missing", "ops"],
+        ["owner-proof-delivery-null", "ops"],
+        ["owner-proof-delivery-alias", "ops"],
+        ["owner-proof-delivery-announce-case", "ops"],
+        ["owner-proof-delivery-none-case", "ops"],
+        ["owner-proof-delivery-webhook-case", "ops"],
       ]);
       expect(JSON.parse(String(rows[0]?.job_json))).not.toHaveProperty("agentId");
       expect(JSON.parse(String(rows[2]?.job_json))).toHaveProperty(
@@ -91,6 +97,15 @@ it.each([false, true])(
         "agent:research:main",
       );
       expect(JSON.parse(String(rows[3]?.job_json))).not.toHaveProperty("agentId");
+      const deliveries = rows.slice(4).map((row) => JSON.parse(String(row.job_json)).delivery);
+      expect(deliveries).toEqual([
+        { channel: "telegram", to: "synthetic-target" },
+        { mode: null, channel: "telegram", to: "synthetic-target" },
+        { mode: "deliver", channel: "telegram", to: "synthetic-target" },
+        { mode: " ANNOUNCE ", channel: "telegram", to: "synthetic-target" },
+        { mode: " NoNe " },
+        { mode: " WeBhOoK ", to: "https://example.invalid/cron" },
+      ]);
       const saved = JSON.parse(readFileSync(f.configPath, "utf8"));
       expect(saved.agents).not.toHaveProperty("ownership");
       expect(saved.agents.entries.ops.default).toBe(true);

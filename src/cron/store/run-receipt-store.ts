@@ -24,6 +24,10 @@ import { OPENCLAW_STATE_SCHEMA_SQL } from "../../state/openclaw-state-schema.js"
 import { describeUnavailableCronAgent, type CronAgentAvailability } from "../agent-availability.js";
 import { resolveCronJobConfigRevision } from "../config-revision.js";
 import type { CronJob } from "../types.js";
+import {
+  CRON_DELIVERY_REPAIR_REQUIRED_MESSAGE,
+  hasCanonicalCronDeliveryMode,
+} from "./delivery-codec.js";
 import { cronStoreKey } from "./key.js";
 import { loadedCronStoreFromRows, loadCronRows } from "./row-codec.js";
 import {
@@ -274,6 +278,12 @@ function validateCurrentJob(params: {
   return job;
 }
 
+function assertCronRunDelivery(job: CronJob, receiptId: string): void {
+  if (!hasCanonicalCronDeliveryMode(job.delivery)) {
+    throw new CronRunReceiptRevisionError(receiptId, CRON_DELIVERY_REPAIR_REQUIRED_MESSAGE);
+  }
+}
+
 function pruneTerminalReceipts(
   database: DatabaseSync,
   storeKey: string,
@@ -437,6 +447,7 @@ export function claimCronRunReceiptInDatabase(params: {
     handle,
     resolveAgentId: params.resolveAgentId,
   });
+  assertCronRunDelivery(job, handle.receiptId);
   pruneTerminalReceipts(params.database, handle.storeKey, handle.jobId, job, params.receiptSchema);
   executeSqliteQuerySync(
     params.database,
@@ -525,9 +536,9 @@ export function assertCronRunReceiptCurrentInDatabase(params: {
   database: DatabaseSync;
   handle: CronRunReceiptHandle;
   resolveAgentId: ResolveReceiptAgentId;
-}): void {
+}): CronJob {
   assertCronRunReceiptOwnedInDatabase(params);
-  validateCurrentJob({
+  return validateCurrentJob({
     database: params.database,
     handle: params.handle,
     resolveAgentId: params.resolveAgentId,
@@ -541,7 +552,8 @@ export function activateCronRunReceiptInDatabase(params: {
   startedAtMs: number;
   resolveAgentId: ResolveReceiptAgentId;
 }): CronRunReceiptHandle {
-  assertCronRunReceiptCurrentInDatabase(params);
+  const job = assertCronRunReceiptCurrentInDatabase(params);
+  assertCronRunDelivery(job, params.handle.receiptId);
   executeSqliteQuerySync(
     params.database,
     query(params.database)
@@ -573,7 +585,12 @@ export function readCronRunReceiptCurrentJob(params: {
         );
       }
       assertCronRunReceiptOwnedInDatabase({ database, handle: params.handle });
-      return params.allowMissingJob ? undefined : validateCurrentJob({ database, ...params });
+      if (params.allowMissingJob) {
+        return undefined;
+      }
+      const job = validateCurrentJob({ database, ...params });
+      assertCronRunDelivery(job, params.handle.receiptId);
+      return job;
     },
   );
 }

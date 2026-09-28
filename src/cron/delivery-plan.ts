@@ -1,6 +1,5 @@
 /** Resolves cron delivery and failure-notification routing from job config. */
 import {
-  normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
   normalizeOptionalThreadValue,
@@ -9,6 +8,10 @@ import type { CronFailureDestinationConfig } from "../config/types.cron.js";
 import { resolveTargetPrefixedChannel } from "../infra/outbound/channel-target-prefix.js";
 import { normalizeMessageChannel } from "../utils/message-channel-core.js";
 import { shouldDefaultCronDeliveryToAnnounce } from "./delivery-defaults.js";
+import {
+  assertCanonicalCronDeliveryMode,
+  hasCanonicalCronDeliveryMode,
+} from "./store/delivery-codec.js";
 import type { CronDelivery, CronDeliveryMode, CronJob, CronMessageChannel } from "./types.js";
 
 /** Normalized routing plan for a cron job's primary delivery behavior. */
@@ -66,34 +69,14 @@ export function resolveCronDeliveryPlan(
   job: Pick<CronJob, "delivery"> & Partial<Pick<CronJob, "payload" | "sessionTarget">>,
 ): CronDeliveryPlan {
   const delivery = job.delivery;
-  const hasDelivery = delivery && typeof delivery === "object";
-  const rawMode = hasDelivery ? (delivery as { mode?: unknown }).mode : undefined;
-  const normalizedMode =
-    typeof rawMode === "string" ? normalizeLowercaseStringOrEmpty(rawMode) : rawMode;
-  const mode =
-    normalizedMode === "announce"
-      ? "announce"
-      : normalizedMode === "webhook"
-        ? "webhook"
-        : normalizedMode === "none"
-          ? "none"
-          : normalizedMode === "deliver"
-            ? "announce"
-            : undefined;
+  assertCanonicalCronDeliveryMode(delivery);
 
-  const deliveryChannel = normalizeChannel(
-    (delivery as { channel?: unknown } | undefined)?.channel,
-  );
-  const deliveryTo = normalizeOptionalString((delivery as { to?: unknown } | undefined)?.to);
-  const deliveryThreadId = normalizeOptionalThreadValue(
-    (delivery as { threadId?: unknown } | undefined)?.threadId,
-  );
-  const to = deliveryTo;
-  const deliveryAccountId = normalizeOptionalString(
-    (delivery as { accountId?: unknown } | undefined)?.accountId,
-  );
-  if (hasDelivery) {
-    const resolvedMode = mode ?? "announce";
+  const deliveryChannel = normalizeChannel(delivery?.channel);
+  const to = normalizeOptionalString(delivery?.to);
+  const deliveryThreadId = normalizeOptionalThreadValue(delivery?.threadId);
+  const deliveryAccountId = normalizeOptionalString(delivery?.accountId);
+  if (delivery) {
+    const resolvedMode = delivery.mode;
     const channel =
       resolvedMode === "announce"
         ? resolveAnnounceChannel({ channel: deliveryChannel, to })
@@ -275,8 +258,8 @@ function isSameDeliveryTarget(
   delivery: CronDelivery,
   failurePlan: CronFailureDeliveryPlan,
 ): boolean {
-  const primaryMode = delivery.mode ?? "announce";
-  if (primaryMode === "none") {
+  const primaryMode = delivery.mode;
+  if (!hasCanonicalCronDeliveryMode(delivery) || primaryMode === "none") {
     return false;
   }
 

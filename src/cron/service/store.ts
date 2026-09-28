@@ -16,6 +16,10 @@ import {
   type QuarantinedCronConfigJob,
 } from "../store.js";
 import {
+  CRON_DELIVERY_REPAIR_REQUIRED_MESSAGE,
+  hasCanonicalCronDeliveryMode,
+} from "../store/delivery-codec.js";
+import {
   CronRunReceiptConflictError,
   CronRunReceiptRevisionError,
 } from "../store/run-receipt-store.js";
@@ -136,6 +140,16 @@ export async function ensureLoaded(
   const durableNextRunAtMsByJobId = new Map<string, number | undefined>();
   const quarantinedConfigJobs: QuarantinedCronConfigJob[] = [...loaded.invalidConfigRows];
   for (const [index, raw] of loadedJobs.entries()) {
+    if (!hasCanonicalCronDeliveryMode(raw.delivery)) {
+      const warningKey = `delivery:${String(raw.id)}`;
+      if (!state.warnedInvalidPersistedJobKeys.has(warningKey)) {
+        state.warnedInvalidPersistedJobKeys.add(warningKey);
+        state.deps.log.warn(
+          { jobId: raw.id },
+          `cron: job execution withheld: ${CRON_DELIVERY_REPAIR_REQUIRED_MESSAGE}`,
+        );
+      }
+    }
     const rawConfigJob = loaded.configJobs[index] ?? structuredClone(raw);
     const sourceIndex = loaded.configJobIndexes[index] ?? index;
     const runtimeEntry = loaded.configJobRuntimeEntries[index];
@@ -146,6 +160,9 @@ export async function ensureLoaded(
     let normalized: Record<string, unknown> | null;
     try {
       normalized = normalizeCronJobInput(raw);
+      if (normalized && raw.delivery !== undefined) {
+        normalized.delivery = raw.delivery;
+      }
     } catch (error) {
       if (!isInvalidCronSessionTargetIdError(error)) {
         throw error;
@@ -411,7 +428,7 @@ async function persistOrRestoreUsing(
   persistence: CronPersistence,
 ): Promise<void> {
   try {
-    if (!state.deps.cronEnabled && snapshot.store && state.store) {
+    if (snapshot.store && state.store && state.pendingQuarantineConfigJobs.length === 0) {
       const committed = await persistence.saveChanges(
         state.deps.storePath,
         snapshot.store,

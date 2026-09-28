@@ -153,6 +153,28 @@ function createWatcherFixture(
 const flush = () => setImmediate();
 
 describe("createCronExitWatchers", () => {
+  it("does not arm an unrepaired exit job alongside a healthy sibling", async () => {
+    const { supervisor, runs } = makeFakeSupervisor();
+    const watchers = createWatcherFixture({
+      getProcessSupervisor: () => supervisor as never,
+      reserveExit: vi.fn(async () => {}),
+      fireOnExit: vi.fn(async () => {}),
+      logger: noopLogger,
+    });
+    const invalid = onExitJob("invalid-delivery");
+    Reflect.deleteProperty(invalid.delivery!, "mode");
+    try {
+      watchers.reconcile([invalid, onExitJob("healthy-exit")]);
+      await flush();
+      expect(supervisor.spawn).toHaveBeenCalledOnce();
+      expect(watchers.activeJobIds()).toEqual(["healthy-exit"]);
+    } finally {
+      const settled = watchers.cancelAll();
+      for (const run of runs) run.deferred.resolve({ exitCode: 0, reason: "manual-cancel" });
+      await settled;
+    }
+  });
+
   it("arms a watcher and fires on exit after the creating request closes", async () => {
     const { supervisor, runs } = makeFakeSupervisor();
     const creatorContext = new AsyncLocalStorage<string>();

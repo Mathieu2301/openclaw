@@ -1,4 +1,5 @@
 import { resolveCronTriggerMinIntervalMs } from "../config/cron-limits.js";
+import { assertCanonicalCronDeliveryMode } from "../cron/store/delivery-codec.js";
 import type { CronJob, CronJobState } from "../cron/types.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import {
@@ -197,6 +198,7 @@ export function createCronStreamWatchers(
       await stop(job.id, "schedule-update");
       return;
     }
+    assertCanonicalCronDeliveryMode(job.delivery);
     const owner = await getOrCreateOwner(job, isCurrent);
     if (!owner || !isCurrent()) {
       return;

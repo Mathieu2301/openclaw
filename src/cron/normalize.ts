@@ -198,8 +198,6 @@ function coerceDelivery(delivery: UnknownRecord) {
   const parsed = parseDeliveryInput(next);
   if (parsed.mode !== undefined) {
     next.mode = parsed.mode;
-  } else if ("mode" in next) {
-    delete next.mode;
   }
   if ("channel" in next && next.channel === null) {
     next.channel = null;

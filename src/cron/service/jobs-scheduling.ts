@@ -8,6 +8,7 @@ import { isCronJobActive } from "../active-jobs.js";
 import { coerceFiniteScheduleNumber } from "../schedule-number.js";
 import { computeNextRunAtMs, computePreviousRunAtMs } from "../schedule.js";
 import { resolveCronStaggerMs } from "../stagger.js";
+import { hasCanonicalCronDeliveryMode } from "../store/delivery-codec.js";
 import { CRON_STUCK_RUN_MS } from "../store/run-receipt-store.js";
 import type { CronScheduleMaintenanceOptions } from "../store/runtime-worker.types.js";
 import { createCronStreamSourceIdentity, resolveCronStreamBatching } from "../stream-schedule.js";
@@ -694,7 +695,12 @@ export function summarizeCronJobSchedule(state: CronServiceState) {
     if (rawEnabled) {
       enabledCount += 1;
     }
-    if ((rawEnabled ?? true) && isTimeScheduledJob(job) && hasNextRun) {
+    if (
+      (rawEnabled ?? true) &&
+      hasCanonicalCronDeliveryMode(job.delivery) &&
+      isTimeScheduledJob(job) &&
+      hasNextRun
+    ) {
       nextWake = nextWake === undefined ? nextRun : Math.min(nextWake, nextRun);
     }
   }

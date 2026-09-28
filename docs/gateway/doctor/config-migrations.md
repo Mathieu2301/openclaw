@@ -30,6 +30,20 @@ operators can still inspect them. Deleting another agent leaves their rows intac
 The normal `openclaw update` Doctor phase performs this repair before saving
 the migrated config, including its early preflight and include-recovery writes.
 
+## Legacy cron delivery settings
+
+A stored delivery object must name its mode: `none`, `announce`, or `webhook`.
+Doctor repairs a missing or null mode and the retired `deliver` value to
+`announce`. It also trims and lowercases recognized modes. Unknown modes stay
+unchanged with guidance to review the intended route.
+
+The scheduler keeps unrepaired jobs visible and reports `openclaw doctor --fix`;
+it withholds their execution while healthy jobs continue. Doctor repairs known
+legacy values. For an unknown value, explicitly edit the delivery mode after
+reviewing the intended route. Unrelated edits cannot silently discard it.
+Wholly omitted delivery still uses the job's normal defaults; optional failure
+notification fields still inherit their configured defaults.
+
 ## Channel ownership during an update
 
 When Doctor migrates a legacy `agents.list` roster without a `default: true` marker
@@ -87,6 +101,8 @@ Telegram re-registers its configured public `webhookUrl` at startup. It preserve
 that URL because its reverse-proxy upstream cannot be inferred safely. Accounts
 that shared a path and secret on different explicit ports keep their old-port
 routing; assign distinct secrets or paths before moving them to one Gateway port.
+
+A separately installed Telegram plugin on the 2026.9.6 host performs the same config migration, but the host predates Gateway-owned forwarding. Telegram retains the predecessor's direct per-account listener there; accounts need distinct legacy endpoints. Doctor places the listener guidance in its supported warning output and identifies this limitation. On newer hosts, the shared Gateway listener and informational notes remain unchanged.
 
 Microsoft Teams uses the same owner: Doctor moves explicit
 `channels.msteams.webhook.port` to `channels.msteams.legacyWebhook.port`, preserving
@@ -363,6 +379,8 @@ model value into a different embedding model. See [llama.cpp](/plugins/llama-cpp
 
     | Legacy key                                                                                    | Current key                                                                 |
     | ----------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+    | `tools.toolSearch.mode: "code"` | `tools.toolSearch.mode: "tools"` (structured Tool Search) |
+    | `tools.toolSearch.codeTimeoutMs` | removed (Tool Search activation is preserved) |
     | `tools.codeMode.runtime: "quickjs-wasi"` (global and per-agent)                                | `tools.codeMode.executor: "quickjs"` (an existing executor selection wins) |
     | `tools.codeMode.languages`, `agents.entries.*.tools.codeMode.languages`                         | removed (Code Mode executes JavaScript; activation and limits are preserved) |
     | legacy `talk.voiceId`/`talk.voiceAliases`/`talk.modelId`/`talk.outputFormat`/`talk.apiKey`        | `talk.provider` + `talk.providers.<provider>`                               |
