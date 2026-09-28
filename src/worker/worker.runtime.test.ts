@@ -61,6 +61,7 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { saveExecApprovals, type ExecApprovalsFile } from "../infra/exec-approvals.js";
 import { runExec } from "../process/exec.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
+import * as workerTranscriptRuntime from "./embedded-agent-transcript.runtime.js";
 import {
   buildWorkerConnectParams,
   parseWorkerLaunchDescriptor,
@@ -178,6 +179,7 @@ type FakeGatewayOptions = {
   heartbeatIntervalMs?: number;
   computerSnapshot?: string;
   computerCleanupFailure?: boolean;
+  onComputerClose?: () => void;
 };
 
 function assistantMessage(
@@ -308,6 +310,9 @@ class FakeWorkerGateway {
         this.computerRequests.push(parsed.params);
         const closing = parsed.params.command === "computer.act";
         this.applicationOrder.push(closing ? "computer:close" : "computer:snapshot");
+        if (closing) {
+          this.options.onComputerClose?.();
+        }
         this.send(
           socket,
           this.options.computerCleanupFailure && closing
@@ -1141,21 +1146,64 @@ describe("worker runtime", () => {
 
   registerWorkerGatewayToolAvailabilityTests({ setup });
 
-  it("materializes exactly the Browser tool and disposes it before finishing", async () => {
-    const { gateway, launch } = await setup();
-    browserRuntimeMocks.dispose.mockImplementationOnce(async () => {
-      gateway.applicationOrder.push("browser:dispose");
+  it("settles Browser, computer, and transcript owners concurrently before finishing", async () => {
+    const browserRelease = createDeferred();
+    let browserPending = false;
+    let overlappingComputerClose = false;
+    let overlappingTranscriptSettlement = false;
+    const { gateway, launch } = await setup({
+      inferencePlans: ["computer", "text"],
+      computerSnapshot: createSolidPngBuffer(512, 512, { r: 0, g: 128, b: 255 }).toString("base64"),
+      onComputerClose: () => {
+        overlappingComputerClose = browserPending;
+        browserRelease.resolve();
+      },
     });
-    launch.assignment.toolAuthority.allowedToolNames = ["browser"];
+    browserRuntimeMocks.dispose.mockImplementationOnce(async () => {
+      browserPending = true;
+      await browserRelease.promise;
+      browserPending = false;
+      gateway.applicationOrder.push("browser:disposed");
+    });
+    const createTranscript = workerTranscriptRuntime.createWorkerTranscriptRuntime;
+    const transcriptSpy = vi
+      .spyOn(workerTranscriptRuntime, "createWorkerTranscriptRuntime")
+      .mockImplementation((client, signal) => {
+        const runtime = createTranscript(client, signal);
+        const settle = runtime.withSessionWriteSettlement;
+        runtime.withSessionWriteSettlement = (operation) => {
+          overlappingTranscriptSettlement ||= browserPending;
+          return settle(operation);
+        };
+        return runtime;
+      });
+    launch.assignment.toolAuthority.allowedToolNames = ["browser", "computer"];
     launch.assignment.browser = {
       cdpUrl: "http://127.0.0.1:9222",
       launcherPath: "/usr/local/bin/openclaw-worker-browser",
     };
-
-    await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+    launch.assignment.computer = {
+      nodeId: "worker-desktop",
+      computerUse: {
+        contractVersion: 2,
+        provider: { id: "fixture", label: "Fixture", generation: "generation-1" },
+        actions: ["screenshot"],
+        targets: ["screen"],
+        deliveryModes: ["foreground"],
+        observations: ["image"],
+        features: { recording: false, agentCursor: false, multiDisplay: false },
+      },
+    };
+    try {
+      await expect(runWorkerDescriptor(launch)).resolves.toMatchObject({ status: "completed" });
+    } finally {
+      browserRelease.resolve();
+      transcriptSpy.mockRestore();
+    }
 
     expect(gateway.inferenceRequests[0]?.context.tools?.map((tool) => tool.name)).toEqual([
       "browser",
+      "computer",
     ]);
     expect(browserRuntimeMocks.createWorkerBrowserToolRuntime).toHaveBeenCalledWith({
       descriptor: launch.assignment.browser,
@@ -1164,9 +1212,17 @@ describe("worker runtime", () => {
       workspaceDir: await realpath(launch.assignment.workspaceDir),
     });
     expect(browserRuntimeMocks.dispose).toHaveBeenCalledOnce();
-    expect(gateway.applicationOrder.indexOf("browser:dispose")).toBeLessThan(
+    expect(overlappingComputerClose).toBe(true);
+    expect(overlappingTranscriptSettlement).toBe(true);
+    expect(gateway.applicationOrder.indexOf("browser:disposed")).toBeLessThan(
       gateway.applicationOrder.indexOf("live:lifecycle:finishing"),
     );
+    expect(gateway.applicationOrder.indexOf("computer:close")).toBeLessThan(
+      gateway.applicationOrder.indexOf("live:lifecycle:finishing"),
+    );
+    expect(
+      gateway.applicationOrder.findLastIndex((entry) => entry.startsWith("transcript:")),
+    ).toBeLessThan(gateway.applicationOrder.indexOf("live:lifecycle:finishing"));
   });
 
   it.each(["text", "error", "setup"] as const)(

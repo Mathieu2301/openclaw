@@ -291,14 +291,14 @@ async function runWorkerEmbeddedTurnWithResources(
     const cleanup = computerCleanup;
     computerCleanup = undefined;
     const failures = failure ? [failure] : [];
-    for (const dispose of [
-      () => cleanup?.("Worker turn finished"),
-      () => browserRuntime?.dispose(),
-    ]) {
-      try {
-        await dispose();
-      } catch (error) {
-        const cleanupFailure = toWorkerAgentError(error, "Worker tool cleanup failed.");
+    const disposals = await Promise.allSettled(
+      [() => cleanup?.("Worker turn finished"), () => browserRuntime?.dispose()].map(
+        async (dispose) => await dispose(),
+      ),
+    );
+    for (const disposal of disposals) {
+      if (disposal.status === "rejected") {
+        const cleanupFailure = toWorkerAgentError(disposal.reason, "Worker tool cleanup failed.");
         recordModelFallbackStop(cleanupFailure);
         failures.push(cleanupFailure);
       }
@@ -449,19 +449,21 @@ async function runWorkerEmbeddedTurnWithResources(
 
   let finalTranscriptFailure: Error | undefined;
   try {
-    // Provider executions must close while the Gateway still admits this turn.
-    // The terminal ACK fences every later desktop RPC, including cleanup.
-    runFailure = await disposeTools(runFailure);
+    // Cleanup and transcript writes have separate owners after the agent is idle.
+    // Both must settle before the terminal ACK fences further desktop RPCs.
+    [runFailure] = await Promise.all([
+      disposeTools(runFailure),
+      transcriptRuntime
+        .withSessionWriteSettlement(() => undefined)
+        .catch((error: unknown) => {
+          finalTranscriptFailure = toWorkerAgentError(error, "Worker transcript flush failed.");
+        }),
+    ]);
     if (runFailure) {
       liveRuntime.enqueueRunFailure({
         aborted: params.signal?.aborted === true,
         error: runFailure,
       });
-    }
-    try {
-      await transcriptRuntime.withSessionWriteSettlement(() => undefined);
-    } catch (error) {
-      finalTranscriptFailure = toWorkerAgentError(error, "Worker transcript flush failed.");
     }
     if (finalTranscriptFailure === undefined) {
       await liveRuntime.emitTerminal();
