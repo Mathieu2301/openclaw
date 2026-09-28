@@ -18,6 +18,7 @@ import { createProgressCardTool } from "../../tools/progress-card-tool.js";
 import { clearActiveEmbeddedRun } from "../runs.js";
 import { prepareCatalogExecutor } from "./attempt-stream-prepare.test-support.js";
 import { buildEmbeddedRunPayloads } from "./payloads.js";
+import { mergeAttemptToolMediaPayloads } from "./tool-media-payloads.js";
 
 registerAgentSessionLoopTestLifecycle();
 const streams: ReturnType<typeof prepareCatalogExecutor>[] = [];
@@ -28,9 +29,13 @@ afterEach(() => {
   }
 });
 
-it.each([false, true])(
-  "continues a committed unfinished plan without repeating completed effects (nested=%s)",
-  async (nested) => {
+it.each([
+  { nested: false, nonStreamedMedia: false },
+  { nested: true, nonStreamedMedia: false },
+  { nested: false, nonStreamedMedia: true },
+])(
+  "continues a committed unfinished plan without repeating completed effects (nested=$nested, nonStreamedMedia=$nonStreamedMedia)",
+  async ({ nested, nonStreamedMedia }) => {
     const completionCheck = { unfinishedPlan: false, checked: false };
     const plan = [
       { step: "Inspect", status: "completed" as const },
@@ -57,9 +62,24 @@ it.each([false, true])(
     if (!progress) {
       throw new Error("The registered progress-card tool is missing");
     }
+    const mediaUrl = "/tmp/completion-repair.ogg";
+    const attachment = { path: mediaUrl, mimeType: "audio/ogg", name: "repair.ogg" };
+    const media = {
+      mediaUrls: [mediaUrl],
+      attachments: [attachment],
+      audioAsVoice: true,
+      trustedLocalMedia: true,
+    };
+    const expectedPendingMedia = {
+      ...media,
+      attachments: [{ ...attachment, trustedLocalMedia: true }],
+    };
     const repair = vi.fn(async (id: string) => ({
       content: [{ type: "text" as const, text: "Repaired" }],
-      details: { receipt: id },
+      details: {
+        receipt: id,
+        ...(nonStreamedMedia && id === "first-repair" ? { media } : {}),
+      },
     }));
     const { session } = await createTestSession({
       customTools: [
@@ -97,6 +117,8 @@ it.each([false, true])(
       activeSession: session,
       attempt,
       onAgentEvent: (event) => events.push(event),
+      streamReplies: !nonStreamedMedia,
+      trustedLocalMediaToolNames: new Set(["repair"]),
     });
     streams.push(prepared);
     let requests = 0;
@@ -125,6 +147,9 @@ it.each([false, true])(
         );
       }
       if (requests === 3) {
+        if (nonStreamedMedia) {
+          expect(prepared.subscription.getPendingToolMediaReply()).toEqual(expectedPendingMedia);
+        }
         expect(
           context.messages.some(
             (message) =>
@@ -155,15 +180,34 @@ it.each([false, true])(
       events.filter((event) => event.stream === "lifecycle" && event.data.phase === "end"),
     ).toHaveLength(1);
     const assistant = prepared.subscription.getCurrentAttemptAssistant();
-    expect(
-      buildEmbeddedRunPayloads({
-        assistantTexts: prepared.subscription.assistantTexts,
-        answerSegments: prepared.subscription.answerSegments,
-        lastAssistant: assistant,
-        currentAssistant: assistant ?? null,
-        sessionKey: "agent:main:main",
-      }).map((payload) => payload.text),
-    ).toEqual(["Both repairs verified."]);
+    const payloads = buildEmbeddedRunPayloads({
+      assistantTexts: prepared.subscription.assistantTexts,
+      answerSegments: prepared.subscription.answerSegments,
+      lastAssistant: assistant,
+      currentAssistant: assistant ?? null,
+      sessionKey: "agent:main:main",
+    });
+    expect(payloads.map((payload) => payload.text)).toEqual(["Both repairs verified."]);
+    if (nonStreamedMedia) {
+      const pendingMedia = prepared.subscription.getPendingToolMediaReply();
+      expect(pendingMedia).toEqual(expectedPendingMedia);
+      expect(
+        mergeAttemptToolMediaPayloads({
+          payloads,
+          toolMediaUrls: pendingMedia?.mediaUrls,
+          toolAudioAsVoice: pendingMedia?.audioAsVoice,
+          toolTrustedLocalMedia: pendingMedia?.trustedLocalMedia,
+        }),
+      ).toMatchObject([
+        {
+          text: "Both repairs verified.",
+          mediaUrl,
+          mediaUrls: [mediaUrl],
+          audioAsVoice: true,
+          trustedLocalMedia: true,
+        },
+      ]);
+    }
     expect(session.messages.filter((message) => message.role === "toolResult")).toHaveLength(3);
   },
 );
