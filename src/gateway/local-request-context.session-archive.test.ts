@@ -8,6 +8,10 @@ import {
   clearActiveEmbeddedRun,
   type EmbeddedAgentQueueHandle,
 } from "../agents/embedded-agent-runner/runs.js";
+import {
+  addSubagentRunForTests,
+  resetSubagentRegistryForTests,
+} from "../agents/subagents/registry/subagent-registry.test-helpers.js";
 import { withGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
 import { createSessionsTool } from "../agents/tools/sessions-tool.js";
 import type { CliDeps } from "../cli/deps.types.js";
@@ -73,6 +77,57 @@ function withSessionToolsFixture(run: (cfg: OpenClawConfig) => Promise<void>) {
 }
 
 describe("scoped session archive tools", () => {
+  it("keeps archive but withholds Stop from embedded and admitted MCP collectors", async () => {
+    await withSessionToolsFixture(async (cfg) => {
+      const request = getPluginRuntimeGatewayRequestScope();
+      if (!request?.context) {
+        throw new Error("expected local Gateway context");
+      }
+      const client = roleClient("write");
+      const runId = "collector-session-controls";
+      addSubagentRunForTests({ runId, childSessionKey: TARGET, collect: true });
+      try {
+        await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
+          withOperatorToolGatewayAuthority(
+            {
+              authenticatedUserProfile: client.authenticatedUserProfile,
+              scopes: ["operator.write"],
+            },
+            async () => {
+              const options = {
+                config: cfg,
+                agentId: "main",
+                sessionKey: TARGET,
+                sessionId: TARGET_ID,
+                runId,
+                senderIsOwner: false,
+              };
+              for (const tools of [
+                createOpenClawCodingTools({ ...options, swarmCollector: true }),
+                resolveGatewayScopedTools({ ...options, cfg, surface: "loopback" }).tools,
+              ]) {
+                const tool = expectDefined(
+                  tools.find((candidate) => candidate.name === "sessions"),
+                  "collector archive tool",
+                );
+                expect(tool.parameters).toMatchObject({
+                  properties: { action: { enum: ["patch"] }, archived: { type: "boolean" } },
+                });
+                expect(tool.parameters).not.toHaveProperty("properties.runId");
+                await expect(
+                  tool.execute("collector-stop", { action: "stop", sessionKey: TARGET }),
+                ).rejects.toThrow(/unavailable to non-interactive collectors/);
+                expect(tools.some((candidate) => candidate.name === "sessions_send")).toBe(false);
+              }
+            },
+          ),
+        );
+      } finally {
+        resetSubagentRegistryForTests({ persist: false });
+      }
+    });
+  });
+
   it.each(["unbound", "reader", "session-writer"] as const)(
     "does not expose archive to a %s caller",
     async (caller) => {

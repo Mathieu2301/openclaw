@@ -401,6 +401,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
             selfRemoveOnlyJobId: options?.cronSelfRemoveOnlyJobId,
           }),
           createSessionsTool({
+            stopAllowed: options?.swarmCollector !== true,
             controlOnly: options?.senderIsOwner === false,
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             agentSessionId: options?.sessionId,

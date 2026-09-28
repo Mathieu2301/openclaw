@@ -22,7 +22,7 @@ const ACTIONS = [
 ] as const;
 const SESSION_ICON_GLYPH_DESCRIPTION = SESSION_ICON_GLYPH_IDS.join(", ");
 
-export const SessionsToolSchema = Type.Object(
+const SessionsToolSchema = Type.Object(
   {
     action: stringEnum(ACTIONS, { description: "Action" }),
     profileId: Type.Optional({
@@ -156,3 +156,19 @@ export const SessionControlToolSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+/** Restrict only the newly exposed Stop action; preserve pre-existing collector controls. */
+export function resolveSessionsToolSchema(controlOnly: boolean, stopAllowed: boolean) {
+  const schema = controlOnly ? SessionControlToolSchema : SessionsToolSchema;
+  if (stopAllowed) {
+    return schema;
+  }
+  const { runId: _runId, clearQueued: _clearQueued, ...properties } = schema.properties;
+  return Type.Object(
+    {
+      ...properties,
+      action: stringEnum(controlOnly ? ["patch"] : ACTIONS.filter((action) => action !== "stop")),
+    },
+    { additionalProperties: false },
+  );
+}
