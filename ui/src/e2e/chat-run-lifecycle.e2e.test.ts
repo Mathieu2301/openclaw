@@ -3,7 +3,6 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "playwright";
 import { afterEach, expect, it } from "vitest";
-import type { ApplicationContext } from "../app/context.ts";
 import { prepareChatHistoryFixture } from "../test-helpers/chat-activity-fixtures.ts";
 import { takeControlUiViewportScreenshot } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import {
@@ -11,6 +10,7 @@ import {
   installMockGateway,
   pauseVirtualClock,
 } from "../test-helpers/control-ui-e2e.ts";
+import { refreshSessionRoster } from "./chat-run-lifecycle.test-support.ts";
 import { createControlUiE2eSuite } from "./control-ui-e2e-suite.test-support.ts";
 
 const suite = createControlUiE2eSuite({
@@ -194,17 +194,7 @@ suite.define(() => {
       .getByText(reply.content, { exact: true });
     await replyBody.waitFor();
     const operationLabel = currentPage.locator(".chat-work-group .chat-activity-group__label");
-    const refreshedSession = await currentPage.evaluate(async (key) => {
-      const app = document.querySelector<
-        HTMLElement & { runtime?: { context?: ApplicationContext } }
-      >("openclaw-app");
-      const sessions = app?.runtime?.context?.sessions;
-      if (!sessions) {
-        throw new Error("Session capability is missing");
-      }
-      await sessions.refresh({ agentId: "main", force: true });
-      return sessions.state.result?.sessions.find((row) => row.key === key);
-    }, sessionKey);
+    const refreshedSession = await refreshSessionRoster(currentPage, sessionKey);
     expect(refreshedSession).toMatchObject({ lastRunId: runId, runtimeMs: 13_000 });
     await operationLabel.waitFor();
     await expect.poll(() => operationLabel.textContent()).toBe("Worked for 13s");
@@ -660,19 +650,21 @@ suite.define(() => {
       const stop = currentPage.getByRole("button", { name: "Stop generating" });
       const composer = currentPage.locator(".agent-chat__input textarea");
       await stop.waitFor({ state: "visible" });
+      const completedSession = {
+        key: sessionKey,
+        sessionId: `session:${sessionKey}`,
+        kind: "direct",
+        updatedAt: activeUpdatedAt + 1,
+        hasActiveRun: false,
+        hasActiveSubagentRun: false,
+        activeRunIds: [],
+        status: "done",
+      };
+      await gateway.setSessionsListResponse({ sessions: [completedSession] });
       await gateway.setMethodResponse("chat.history", {
         messages: [{ role: "assistant", content: "Cached activity has finished." }],
         sessionId: `session:${sessionKey}`,
-        sessionInfo: {
-          key: sessionKey,
-          sessionId: `session:${sessionKey}`,
-          kind: "direct",
-          updatedAt: activeUpdatedAt + 1,
-          hasActiveRun: false,
-          hasActiveSubagentRun: false,
-          activeRunIds: [],
-          status: "done",
-        },
+        sessionInfo: completedSession,
       });
       const historyCount = (await gateway.getRequests("chat.history")).length;
       await gateway.deferNext("sessions.abort");
@@ -691,6 +683,11 @@ suite.define(() => {
         .locator(".chat-bubble")
         .getByText("Cached activity has finished.", { exact: true })
         .waitFor();
+      const refreshedSession = await refreshSessionRoster(currentPage, sessionKey);
+      expect(refreshedSession).toMatchObject({
+        hasActiveRun: false,
+        hasActiveSubagentRun: false,
+      });
       expect(await composer.inputValue()).toBe("keep this draft");
       await composer.fill("");
       await stop.waitFor({ state: "detached" });
