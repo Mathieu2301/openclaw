@@ -13,6 +13,7 @@ import { getOwnBrowserProfile, resolveProfile, type ResolvedBrowserProfile } fro
 import {
   BrowserProfileNotFoundError,
   BrowserProfileUnavailableError,
+  BrowserTabNotFoundError,
   toBrowserErrorResponse,
 } from "./errors.js";
 import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
@@ -152,12 +153,23 @@ function createProfileContext(
       }
       return await withLease(options?.signal, async (signal) => {
         // Explicit targets can come from history; lookup must not launch or restart a browser.
-        if (targetId !== undefined && !(await rawAvailability.isReachable(undefined, { signal }))) {
-          throw new BrowserProfileUnavailableError(
-            `Browser profile "${profile.name}" is not running. Start the browser or open a new tab, then select a current target.`,
-          );
+        // Resolve the tab first: a short CDP health probe can time out while tab enumeration succeeds.
+        try {
+          return await rawSelection.ensureTabAvailable(targetId, { ...options, signal });
+        } catch (error) {
+          if (error instanceof BrowserTabNotFoundError) {
+            throw error;
+          }
+          if (
+            targetId !== undefined &&
+            !(await rawAvailability.isReachable(undefined, { signal }))
+          ) {
+            throw new BrowserProfileUnavailableError(
+              `Browser profile "${profile.name}" is not running. Start the browser or open a new tab, then select a current target.`,
+            );
+          }
+          throw error;
         }
-        return await rawSelection.ensureTabAvailable(targetId, { ...options, signal });
       });
     },
     isHttpReachable: (timeoutMs, callerSignal) =>

@@ -36,6 +36,30 @@ const permissiveRemoteCdpPolicy = {
 };
 
 describe("browser remote profile tab ops via Playwright", () => {
+  it("resolves an explicit tab even when the short CDP health probe would time out", async () => {
+    const healthProbe = vi.spyOn(deps.chromeModule, "isChromeCdpReady").mockResolvedValue(false);
+    const listPagesViaPlaywright = vi.fn(async () => [page("T1")]);
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+    const { remote } = deps.createRemoteRouteHarness();
+
+    await expect(remote.ensureTabAvailable("T1")).resolves.toMatchObject({ targetId: "T1" });
+    expect(listPagesViaPlaywright).toHaveBeenCalled();
+    expect(healthProbe).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing explicit tab without mistaking it for an unavailable profile", async () => {
+    const healthProbe = vi.spyOn(deps.chromeModule, "isChromeCdpReady").mockResolvedValue(false);
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright: vi.fn(async () => [page("T1")]),
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+    const { remote } = deps.createRemoteRouteHarness();
+
+    await expect(remote.ensureTabAvailable("STALE_TARGET")).rejects.toThrow(/tab not found/i);
+    expect(healthProbe).not.toHaveBeenCalled();
+  });
+
   it("uses Playwright tab operations when available", async () => {
     const listPagesViaPlaywright = vi.fn(async () => [
       { targetId: "T1", title: "Tab 1", url: "https://example.com", type: "page" },
