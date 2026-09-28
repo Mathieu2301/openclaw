@@ -432,7 +432,9 @@ test("a delayed deletion event cannot erase Side chat for a newer generation", a
     stop();
   }
   expect(deletion).toBeDefined();
+  expect(await readState(service, sessionKey)).toEqual({ exchanges: [] });
   await recreate(sessionKey);
+  expect(await readState(service, sessionKey)).toEqual({ exchanges: [] });
   await ask(service, sessionKey, "New generation question?");
   const newState = await readState(service, sessionKey);
   expect(newState?.exchanges.map((exchange) => exchange.question)).toEqual([

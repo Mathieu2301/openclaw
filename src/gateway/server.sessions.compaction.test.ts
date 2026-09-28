@@ -529,6 +529,79 @@ test("sessions.compact rejects stale terminal persistence after the session chan
   }
 });
 
+test("sessions.reset waits for terminal compaction before replacing the session", async () => {
+  const { storePath } = await createCompactionSession("sess-compact-reset");
+  const compaction = holdCompaction();
+
+  const { ws } = await openClient();
+  const compactResult = rpcReq(ws, "sessions.compact", { key: "main" });
+  let resetResult: ReturnType<typeof rpcReq<{ entry: { sessionId: string } }>> | undefined;
+  try {
+    await compaction.waitForEntry(compactResult);
+    let resetSettled = false;
+    resetResult = rpcReq<{ entry: { sessionId: string } }>(ws, "sessions.reset", {
+      key: "main",
+    }).finally(() => {
+      resetSettled = true;
+    });
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(resetSettled).toBe(false);
+
+    compaction.release();
+    expect((await compactResult).ok).toBe(true);
+    const reset = await resetResult;
+    expect(reset.ok).toBe(true);
+    const resetSessionId = reset.payload?.entry.sessionId;
+    expect(resetSessionId).toBe("sess-compact-reset");
+    const resetEntry = loadSessionEntry({ sessionKey: "agent:main:main", storePath });
+    expect(resetEntry?.sessionId).toBe(resetSessionId);
+  } finally {
+    compaction.release();
+    await Promise.allSettled([compactResult, resetResult]);
+    await closeGatewayTestWebSocket(ws);
+  }
+});
+
+test("sessions.compact blocks new work admission through terminal persistence", async () => {
+  const { storePath, sessionId } = await createCompactionSession("sess-compact-admission");
+  const compaction = holdCompaction();
+
+  const { ws } = await openClient();
+  const compactResult = rpcReq(ws, "sessions.compact", { key: "main" });
+  let pendingAdmission: ReturnType<typeof beginSessionWorkAdmission> | undefined;
+  try {
+    await compaction.waitForEntry(compactResult);
+
+    let admitted = false;
+    pendingAdmission = beginSessionWorkAdmission({
+      scope: storePath,
+      identities: ["agent:main:main", sessionId],
+      assertAllowed: () => {},
+    }).then((lease) => {
+      admitted = true;
+      return lease;
+    });
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(admitted).toBe(false);
+
+    compaction.release();
+    expect((await compactResult).ok).toBe(true);
+    await pendingAdmission;
+    expect(admitted).toBe(true);
+  } finally {
+    compaction.release();
+    await Promise.allSettled([
+      compactResult,
+      pendingAdmission?.then((admission) => admission.release()),
+    ]);
+    await closeGatewayTestWebSocket(ws);
+  }
+});
+
 test("sessions.compact returns a no-op without interrupting an active admission", async () => {
   const { storePath, sessionId } = await createCompactionSession("sess-compact-noop-active", {
     totalLines: 2,

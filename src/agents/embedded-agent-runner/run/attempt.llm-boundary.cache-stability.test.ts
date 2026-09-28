@@ -146,6 +146,37 @@ describe("prompt-cache boundary regressions", () => {
     expect(output[0]).toMatchObject({ content: stamped });
   });
 
+  it.each(["openai-completions", "openai-responses"] as const)(
+    "keeps the %s payload prefix identical from the current array form to persisted string history",
+    async (api) => {
+      const text = "Post-fix cache test ping 1 of 2";
+      const current = await capture(api, [user(text)]);
+      const historical = await capture(api, [
+        { role: "user", content: text, timestamp: TS },
+        answer,
+        user("Post-fix cache test ping 2 of 2", TS + 60_000),
+      ]);
+      const field = api === "openai-completions" ? "messages" : "input";
+      const currentPrefix = (current[field] as unknown[]).slice(0, 2);
+      const historicalPrefix = (historical[field] as unknown[]).slice(0, 2);
+      const expectedText = "[Wed 2024-06-05 07:00 UTC] Post-fix cache test ping 1 of 2";
+      expect(JSON.stringify(historicalPrefix)).toBe(JSON.stringify(currentPrefix));
+      expect(currentPrefix[1]).toEqual(
+        api === "openai-completions"
+          ? { role: "user", content: expectedText }
+          : {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: expectedText }],
+            },
+      );
+      const historicalBytes = JSON.stringify(historical[field]);
+      expect(historicalBytes.indexOf("[Wed 2024-06-05 07:01 UTC]")).toBeGreaterThan(
+        historicalBytes.indexOf(expectedText),
+      );
+    },
+  );
+
   it("keeps every sent fingerprint stable and appends one late-media turn", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-99495-boundary-"));
     const target = {

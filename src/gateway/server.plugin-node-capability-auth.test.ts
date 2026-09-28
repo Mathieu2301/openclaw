@@ -688,6 +688,33 @@ describe("gateway plugin node capability auth", () => {
     });
   }, 60_000);
 
+  test("rejects spoofed loopback forwarding headers from trusted proxies", async () => {
+    await withLoopbackTrustedProxy(async () => {
+      const rateLimiter = createGatewayAuthRateLimiter(
+        {
+          maxAttempts: 1,
+          windowMs: 60_000,
+          lockoutMs: 60_000,
+          exemptLoopback: true,
+        },
+        { scheduler: createTestGatewayScheduler() },
+      );
+      await withCanvasGatewayHarness({
+        resolvedAuth: tokenResolvedAuth,
+        listenHost: "0.0.0.0",
+        rateLimiter,
+        handleHttpRequest: async () => false,
+        run: async ({ listener }) => {
+          await expectRepeatedCanvasAuthAttemptsRateLimited(listener, {
+            authorization: "Bearer wrong",
+            host: "localhost",
+            "x-forwarded-for": "127.0.0.1, 203.0.113.24",
+          });
+        },
+      });
+    });
+  }, 60_000);
+
   test("routes one-shot worker desktop tokens through the real gateway upgrade path", async () => {
     const root = await fs.mkdtemp(joinPath(await fs.realpath(os.tmpdir()), "ocwd-"));
     const localSocketPath = joinPath(root, "desktop.sock");

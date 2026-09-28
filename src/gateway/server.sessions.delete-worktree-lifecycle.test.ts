@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
 import type { SessionsDeleteResult } from "../../packages/gateway-protocol/src/index.js";
+import { requireGit } from "../agents/worktrees/git.js";
 import {
   getRegistryWorktree,
   WorktreeRemovalContentionError,
@@ -246,7 +247,7 @@ test("sessions.create only allocates worktrees for lifecycle-manageable agent ow
   }
 });
 
-test("sessions.delete keeps same-key successor worktree creation behind exact cleanup", async () => {
+test("sessions.delete snapshots dirty work before admitting same-key successor worktree creation", async () => {
   const openClawState = await createOpenClawTestState({
     layout: "state-only",
     prefix: "openclaw-delete-worktree-successor-",
@@ -288,6 +289,7 @@ test("sessions.delete keeps same-key successor worktree creation behind exact cl
     expect(predecessor.ok, JSON.stringify(predecessor)).toBe(true);
     const predecessorSessionId = predecessor.payload!.sessionId;
     const predecessorWorktree = predecessor.payload!.worktree;
+    await fs.writeFile(path.join(predecessorWorktree.path, "dirty.txt"), "keep me\n");
 
     removeSpy.mockImplementation(async (params) => {
       if (params.id === predecessorWorktree.id && params.reason === "session-delete") {
@@ -324,6 +326,14 @@ test("sessions.delete keeps same-key successor worktree creation behind exact cl
     releaseRemoval();
     const [deleted, successor] = await Promise.all([deletion, successorPromise]);
     expect(deleted).toMatchObject({ ok: true, payload: { deleted: true } });
+    const removedPredecessor = getRegistryWorktree(process.env, predecessorWorktree.id);
+    expect(removedPredecessor).toMatchObject({
+      removedAt: expect.any(Number),
+      snapshotRef: expect.stringMatching(/^refs\/openclaw\/snapshots\//),
+    });
+    expect(
+      await requireGit(workspace, ["show", `${removedPredecessor!.snapshotRef}:dirty.txt`]),
+    ).toBe("keep me");
     expect(successor.ok).toBe(true);
     const successorSessionId = successor.payload!.sessionId;
     const successorWorktree = successor.payload!.worktree;

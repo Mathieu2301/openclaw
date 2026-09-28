@@ -47,6 +47,7 @@ const roleCases: Array<{
   defaultScopes: string[];
   declaredRead: string[];
 }> = [
+  { surface: "write-default", role: "empty", scopes: [], defaultScopes: [], declaredRead: [] },
   { surface: "trusted-operator", role: "empty", scopes: [], defaultScopes: [], declaredRead: [] },
   {
     surface: "write-default",
@@ -57,9 +58,30 @@ const roleCases: Array<{
   },
   {
     surface: "trusted-operator",
+    role: "reader",
+    scopes: ["operator.read"],
+    defaultScopes: ["operator.read"],
+    declaredRead: ["operator.read"],
+  },
+  {
+    surface: "write-default",
+    role: "writer",
+    scopes: ["operator.write"],
+    defaultScopes: ["operator.write"],
+    declaredRead: ["operator.read"],
+  },
+  {
+    surface: "trusted-operator",
     role: "writer",
     scopes: ["operator.write"],
     defaultScopes: ["operator.read", "operator.write"],
+    declaredRead: ["operator.read"],
+  },
+  {
+    surface: "write-default",
+    role: "admin",
+    scopes: ["operator.admin"],
+    defaultScopes: ["operator.write"],
     declaredRead: ["operator.read"],
   },
   {

@@ -381,6 +381,38 @@ test("required project preparation isolates host filters without rejecting the r
   });
 });
 
+test("visible spawn tool preserves project validation and external cwd authorization", async () => {
+  await createManagedProjectParent();
+  const project = await registerProjectRegistry({ path: repository });
+  const { registerRun, spawn } = await createVisibleSpawnTool();
+  const gitUrl = "https://github.com/example/selected.git";
+  for (const options of [
+    { projectId: project.id, cwd: repository },
+    { projectGitUrl: gitUrl, cwd: repository },
+    { projectId: project.id, projectGitUrl: gitUrl },
+  ]) {
+    await expect(spawn(options)).rejects.toThrow(/cannot be combined/);
+  }
+  for (const projectGitUrl of [
+    "/tmp/repo",
+    "file:///tmp/repo",
+    "https://example.com/repo.git",
+    "not-a-url",
+  ]) {
+    await expect(spawn({ projectGitUrl })).rejects.toThrow(
+      "Use a GitHub HTTPS or git@github.com repository URL",
+    );
+  }
+  await expect(spawn({ projectId: "missing-project" })).rejects.toThrow("unknown project id");
+  const result = await spawn({ cwd: repository, worktree: true });
+  expect(result.details).toMatchObject({
+    status: "forbidden",
+    error: expect.stringContaining("requires operator.admin"),
+  });
+  expect(registerRun).not.toHaveBeenCalled();
+  expect(projectCloneMocks.materializeProjectClone).not.toHaveBeenCalled();
+});
+
 test.each(["archive", "unregister"] as const)(
   "direct-project worktree spawns roll back after parent %s during preparation",
   async (change) => {
