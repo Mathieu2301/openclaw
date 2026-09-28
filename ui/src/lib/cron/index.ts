@@ -7,6 +7,7 @@ import {
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { resolveCronTriggerMinIntervalMs } from "../../../../src/config/cron-limits.js";
+import { hasCanonicalCronDeliveryMode } from "../../../../src/cron/store/delivery-codec.js";
 import { isSystemMonitorDeclaration } from "../../../../src/cron/system-owned-declaration.js";
 import { isSystemOwnedCronPayloadKind } from "../../../../src/cron/types.js";
 import { createDeferredCore, type Deferred } from "../../../../src/shared/deferred.js";
@@ -235,6 +236,9 @@ export function validateCronForm(form: CronFormState): CronFieldErrors {
         errors.timeoutSeconds = "cron.errors.timeoutInvalid";
       }
     }
+  }
+  if (!form.deliveryMode) {
+    errors.deliveryMode = "cron.errors.deliveryModeRequired";
   }
   if (form.deliveryMode === "webhook") {
     const error = resolveCronWebhookDeliveryError(form.deliveryTo);
@@ -565,7 +569,7 @@ function jobToForm(job: CronJob, prev: CronFormState): CronFormState {
     payloadModel: payload?.kind === "agentTurn" ? (payload.model ?? "") : "",
     payloadThinking: payload?.kind === "agentTurn" ? (payload.thinking ?? "") : "",
     payloadLightContext: payload?.kind === "agentTurn" ? payload.lightContext === true : false,
-    deliveryMode: job.delivery?.mode ?? "none",
+    deliveryMode: hasCanonicalCronDeliveryMode(job.delivery) ? (job.delivery?.mode ?? "none") : "",
     deliveryChannel: job.delivery?.channel ?? CRON_CHANNEL_LAST,
     deliveryTo: job.delivery?.to ?? "",
     deliveryAccountId: job.delivery?.accountId ?? "",

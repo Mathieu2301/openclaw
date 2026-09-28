@@ -3216,6 +3216,9 @@ export const en: TranslationMap & {
       dismiss: "Dismiss {author}'s suggestion",
       typing: "{name} is typing…",
       typingMany: "{names} are typing…",
+      typingSeveral: "Several people are typing…",
+      typingOthers: "{count} others",
+      otherCollaborators: "Other collaborators",
       typingDraftState: "is typing...",
       pausedDraftState: "Draft",
       state: {
@@ -3669,7 +3672,7 @@ export const en: TranslationMap & {
     },
     questions: {
       other: "Type your own answer here",
-      multilineHint: "Enter adds a line · Ctrl/⌘+Enter to continue",
+      multilineHint: "Enter adds a line · {shortcut} to continue",
       answer: "Answer",
       answerPlaceholder: "{label}",
       openLink: "Open link",
@@ -4526,6 +4529,7 @@ export const en: TranslationMap & {
       mainTimelineMessage: "Main timeline message",
       assistantTaskPrompt: "Prompt",
       deliveryModeLabel: "Mode",
+      selectDeliveryMode: "Choose a delivery mode",
       announceDefault: "Announce summary",
       webhookPost: "Webhook POST",
       noneInternal: "None (internal)",
@@ -4641,6 +4645,8 @@ export const en: TranslationMap & {
       systemTextRequired: "System text is required.",
       agentMessageRequired: "Agent message is required.",
       timeoutInvalid: "If set, timeout must be 0 or greater (0 disables this timeout).",
+      deliveryModeRequired:
+        "Choose a delivery mode explicitly, or run openclaw doctor --fix to repair legacy settings.",
       webhookUrlRequired: "Webhook URL is required.",
       webhookUrlInvalid: "Webhook URL must be a valid http(s):// URL without embedded credentials.",
       invalidRunTime: "Invalid run time.",

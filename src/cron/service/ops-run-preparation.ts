@@ -341,13 +341,17 @@ export async function prepareManualRun(
   opts?: ManualRunOptions,
 ): Promise<PreparedManualRun> {
   return await locked(state, async () => {
+    const generation = state.lifecycleGeneration;
     const preflight = await inspectManualRunPreflight(state, id, mode, opts);
     if (!preflight.ok || "reason" in preflight) {
       return preflight;
     }
+    if (state.lifecycleGeneration !== generation) {
+      return { ok: true, ran: false, reason: "stopped" as const };
+    }
     const { job } = preflight;
     // Preflight awaited store loading; keep the exact caller live until the
-    // synchronous reservation write transfers ownership to its durable receipt.
+    // reservation worker transfers ownership to its durable receipt.
     opts?.commitGuard?.();
     const reservationAt = state.deps.nowMs();
     if (!isJobDue(job, reservationAt, { forced: isImmediateCronRunMode(mode) })) {
@@ -383,6 +387,7 @@ export async function prepareManualRun(
                         runReceipt,
                         preserveWhenDisabled: true,
                         onExit: true,
+                        lifecycleGeneration: generation,
                       },
                     );
                     onExit.onReserved();
@@ -402,6 +407,9 @@ export async function prepareManualRun(
       throw error;
     }
     if (!reserved) {
+      if (state.stopped || state.lifecycleGeneration !== generation) {
+        return { ok: true, ran: false, reason: "stopped" as const };
+      }
       if (internalTracker.emitted) {
         return { ok: true, ran: false, reason: "ownerless" as const };
       }
@@ -411,8 +419,9 @@ export async function prepareManualRun(
     reservationIdentity ??= reserveQueuedCronRun(state, reservedJob.id, reservationAt, {
       runReceipt: reserved.runReceipt,
       preserveWhenDisabled: mode === "force" && !isJobEnabled(job),
+      lifecycleGeneration: generation,
     });
-    if (state.stopped) {
+    if (state.stopped || state.lifecycleGeneration !== generation) {
       try {
         await releasePreparedManualReservationWithRetry(state, {
           jobId: reservedJob.id,

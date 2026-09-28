@@ -40,7 +40,6 @@ import {
 } from "../shared/retired-model-ref-repair.js";
 import { migrateLegacyNotifyFallback } from "./legacy-notify.js";
 import {
-  archiveLegacyCronQuarantineForMigration,
   loadLegacyCronQuarantineForMigration,
   type LegacyCronQuarantine,
 } from "./legacy-quarantine-migration.js";
@@ -49,6 +48,7 @@ import {
   migrateLegacyCronRunLogsToSqlite,
 } from "./legacy-run-log-migration.js";
 import {
+  archiveLegacyCronFile,
   archiveLegacyCronStoreForMigration,
   assertLegacyCronMigrationSourceCurrent,
   legacyCronStoreFilesExist,
@@ -482,7 +482,10 @@ export async function applyLegacyCronStoreRepair(params: {
   }
 
   if (state.legacyQuarantine) {
-    const archiveResult = await archiveLegacyCronQuarantineForMigration(state.legacyQuarantine);
+    const archiveResult = await archiveLegacyCronFile(
+      state.legacyQuarantine.path,
+      state.legacyQuarantine.sourceSha256,
+    );
     if (archiveResult.ok) {
       changes.push(
         `Cron quarantine migrated to SQLite from ${shortenHomePath(state.legacyQuarantine.path)}.`,
@@ -656,15 +659,7 @@ export async function repairCronCodexModelRefsAfterConfigWrite(params: {
     }
     const state = await loadLegacyCronRepairState({ cfg: params.cfg });
     return state
-      ? await applyLegacyCronStoreRepair({
-          cfg: params.cfg,
-          retiredModelRefConfig: params.retiredModelRefConfig,
-          authProfileIdMap: params.authProfileIdMap,
-          state,
-          migrateCodexModelRefs: params.migrateCodexModelRefs,
-          repairRetiredModelRefs: params.repairRetiredModelRefs,
-          blockedModelIdentities: params.blockedModelIdentities,
-        })
+      ? await applyLegacyCronStoreRepair({ ...params, state })
       : { changes: [], warnings: [] };
   } catch (err) {
     rethrowSqliteSchemaVersionError(err);
