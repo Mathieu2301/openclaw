@@ -217,10 +217,10 @@ describe("AppSidebar viewer presence", () => {
       expect(
         rows.map((row) => row.querySelector(".sidebar-online__person-name")?.textContent?.trim()),
       ).toEqual(["Zed", "Alice", "Bob"]);
-      expect(rows.map((row) => row.classList.contains("sidebar-online__person--away"))).toEqual([
-        false,
-        true,
-        false,
+      expect(rows.map((row) => row.dataset.presenceActivity)).toEqual([
+        "active",
+        "idle",
+        "unknown",
       ]);
     });
     expect(sidebar.querySelector('[data-online-user-id="self"]')).toBeNull();

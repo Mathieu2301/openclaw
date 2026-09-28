@@ -109,9 +109,7 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost) {
                   data-person-card-section="online"
                 >
                   <${tag}
-                    class="sidebar-online__person ${
-                      activityState === "idle" ? "sidebar-online__person--away" : ""
-                    }"
+                    class="sidebar-online__person"
                     type=${activity ? nothing : "button"}
                     href=${activity?.href ?? nothing}
                     @click=${activity?.open ?? nothing}

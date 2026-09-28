@@ -2588,10 +2588,6 @@ openclaw-settings-save-indicator:empty {
   box-shadow: var(--focus-ring);
 }
 
-.sidebar-online__person--away {
-  color: var(--muted);
-}
-
 .sidebar-online__avatar {
   position: relative;
   display: flex;
@@ -2600,11 +2596,12 @@ openclaw-settings-save-indicator:empty {
   height: 18px;
 }
 
-/* Online membership means connected even when recent input is unknown. */
+/* All rows are connected; a hollow ring avoids implying observed activity. */
 .sidebar-online__avatar::after {
   position: absolute;
   right: -2px;
   bottom: -2px;
+  box-sizing: content-box;
   width: 6px;
   height: 6px;
   border: 2px solid var(--bg);
@@ -2617,11 +2614,16 @@ openclaw-settings-save-indicator:empty {
   background: var(--warn);
 }
 
+.sidebar-online__person[data-presence-activity="unknown"] .sidebar-online__avatar::after {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1.5px var(--ok);
+}
+
 .sidebar-online__person-name {
   display: block;
   min-width: 0;
   overflow: hidden;
-  color: inherit;
+  color: var(--text-strong);
   font-size: calc(13px * var(--control-ui-text-scale));
   font-weight: 500;
   text-overflow: ellipsis;
@@ -2638,7 +2640,8 @@ openclaw-settings-save-indicator:empty {
 .sidebar-online__open {
   flex: none;
   color: var(--muted);
-  font-size: calc(11px * var(--control-ui-text-scale));
+  font-size: calc(12px * var(--control-ui-text-scale));
+  font-weight: 400;
   white-space: nowrap;
 }
 
@@ -2647,13 +2650,20 @@ openclaw-settings-save-indicator:empty {
   padding: 0 4px;
   border: 1px solid transparent;
   border-radius: 5px;
-  background: color-mix(in srgb, var(--info) 14%, transparent);
-  color: var(--info);
+  background: var(--accent-subtle);
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
   font-family: var(--font-body);
   font-size: calc(10px * var(--control-ui-text-scale));
   font-weight: 400;
   line-height: calc(14px * var(--control-ui-text-scale));
   white-space: nowrap;
+}
+
+/* Keep translated word boundaries legible at compact sizes in every interface font. */
+.sidebar-online__open,
+.sidebar-online__running {
+  letter-spacing: normal;
+  word-spacing: 0.15em;
 }
 
 .sidebar-online__running strong {

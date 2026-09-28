@@ -223,12 +223,31 @@ describe("sidebar people workload", () => {
     expect(person(sidebar, "bea").getAttribute("aria-description")).toContain("2 running");
   });
 
-  it("keeps presence order and raw/profile collisions unknown without workload controls", async () => {
-    const { sidebar } = await mountWorkload(undefined, true);
+  it("keeps all mixed Active, Idle, and Online-only people, including zero counts, in presence order", async () => {
+    const { sidebar, gateway } = await mountWorkload(undefined, true);
+    const entries = presence(true);
+    gateway.publishEvent("presence", {
+      presence: [
+        {
+          instanceId: "tab-zoe",
+          ts: NOW,
+          user: { id: "zoe", identity: { type: "profile", id: "zoe" }, name: "zoe" },
+        },
+        entries[1],
+        entries[3],
+        entries[2],
+        entries[0],
+      ],
+    });
+    await settle(sidebar);
     expect(counts(sidebar, "ada")).toEqual(["7 open", "1 running"]);
     expect(counts(sidebar, "Raw Ada")).toEqual(["— open"]);
     expect(counts(sidebar, "cy")).toEqual([]);
-    expect(names(sidebar)).toEqual(["ada", "cy", "bea", "Raw Ada"]);
+    expect(names(sidebar)).toEqual(["ada", "cy", "bea", "Raw Ada", "zoe"]);
+    expect(counts(sidebar, "zoe")).toEqual([]);
+    expect(person(sidebar, "zoe").getAttribute("aria-description")).toBe(
+      "Online · 0 open sessions, 0 running",
+    );
     expect(
       sidebar.querySelector(
         ".sidebar-online__columns, .sidebar-online__filter, .sidebar-online__totals",
@@ -239,6 +258,7 @@ describe("sidebar people workload", () => {
       ["ada", "active", "Online · Active"],
       ["bea", "idle", "Online · Idle"],
       ["Raw Ada", "unknown", "Online · Session counts unavailable"],
+      ["zoe", "unknown", "Online · 0 open sessions, 0 running"],
     ] as const) {
       const row = person(sidebar, name);
       expect(row.dataset.presenceActivity).toBe(activity);
