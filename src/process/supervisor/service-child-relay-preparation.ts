@@ -2,7 +2,12 @@ import type { Writable } from "node:stream";
 import { resolveRuntimeProcessEntrypointUrl } from "../../infra/runtime-process-url.js";
 import type { NodeWorkerCleanupBinding } from "../../node-host/node-worker-launch-receipt.js";
 import { prepareSecretInputStdio, type SpawnStdioEntry } from "../spawn-secret-input.js";
-import { getInheritedProcessLineageFds } from "./inherited-process-lineage.js";
+import {
+  getInheritedNativeProcessOwner,
+  getInheritedProcessLineageFds,
+} from "./inherited-process-lineage.js";
+
+declare const WORKER_DEPLOY_BUILD: boolean;
 import { supportsNodeWorkerProcessOwner } from "./service-child-protocol.js";
 import { reserveStdioEntry } from "./service-child-stdio.js";
 import type { ProcessAdapterConstruction, SpawnProcessAdapter, SpawnSecretInput } from "./types.js";
@@ -21,11 +26,17 @@ export type ServiceChildRelayParams = ProcessAdapterConstruction & {
   onWorkerMessage?: (message: unknown) => void;
   windowsShellCommand?: string;
 } & (
-    | { ownedWorker: true; env: NodeJS.ProcessEnv; cleanupBinding: NodeWorkerCleanupBinding }
+    | {
+        ownedWorker: true;
+        env: NodeJS.ProcessEnv;
+        cleanupBinding: NodeWorkerCleanupBinding;
+        nativeProcessOwnerSupported?: true;
+      }
     | { ownedWorker?: never; env?: NodeJS.ProcessEnv; cleanupBinding?: never }
   );
 
 export type ServiceChildRelayAdapter = SpawnProcessAdapter<NodeJS.Signals | null> & {
+  treeOwnership?: "linux-subreaper";
   waitForExtinction: () => Promise<void>;
   confirmExtinction: () => boolean;
   openStartGate?: () => Promise<void>;
@@ -34,6 +45,26 @@ export type ServiceChildRelayAdapter = SpawnProcessAdapter<NodeJS.Signals | null
 
 /** Prepare transport facts; the host revalidates authority immediately before spawning. */
 export function prepareServiceChildRelay(params: ServiceChildRelayParams) {
+  const nativeProcessOwner =
+    getInheritedNativeProcessOwner() ??
+    (process.platform === "linux" &&
+    !process.versions.bun &&
+    (typeof WORKER_DEPLOY_BUILD !== "boolean" || !WORKER_DEPLOY_BUILD)
+      ? resolveRuntimeProcessEntrypointUrl("serviceChildGroupAnchor").href
+      : undefined);
+  const useLinuxSubreaper =
+    nativeProcessOwner !== undefined &&
+    (!params.ownedWorker || params.nativeProcessOwnerSupported === true);
+  if (process.platform === "linux" && !useLinuxSubreaper) {
+    try {
+      process.kill(0, 0);
+    } catch (cause) {
+      throw new Error(
+        "Process-group ownership is unavailable; use a matching Node host and worker with native process ownership. Cleanup cannot fall back to transport-only execution.",
+        { cause },
+      );
+    }
+  }
   const useWindowsJobAnchor =
     process.platform === "win32" && params.windowsShellCommand !== undefined;
   if (params.ownedWorker && !supportsNodeWorkerProcessOwner()) {
@@ -70,19 +101,25 @@ export function prepareServiceChildRelay(params: ServiceChildRelayParams) {
     reserveStdioEntry(stdio, "ipc");
     return {
       useWindowsJobAnchor,
+      useLinuxSubreaper,
+      nativeProcessOwner: useLinuxSubreaper ? nativeProcessOwner : undefined,
       controlFd,
       lineageFd,
       ownership: params.ownedWorker
         ? {
             ownedWorker: true as const,
             cleanupBinding: params.cleanupBinding,
-            parentLineageFds: [lineageFd!, ...parentLineageFds],
+            ...(useLinuxSubreaper
+              ? { lineageFd, parentLineageFds }
+              : { parentLineageFds: [lineageFd!, ...parentLineageFds] }),
           }
         : { lineageFd, parentLineageFds },
       spawn: {
-        workerUrl: resolveRuntimeProcessEntrypointUrl(
-          useWindowsJobAnchor ? "serviceChildWindowsJobAnchor" : "serviceChildRelay",
-        ),
+        workerUrl: useLinuxSubreaper
+          ? new URL(nativeProcessOwner!)
+          : resolveRuntimeProcessEntrypointUrl(
+              useWindowsJobAnchor ? "serviceChildWindowsJobAnchor" : "serviceChildRelay",
+            ),
         env: params.ownedWorker ? params.env : process.env,
         detached: useWindowsJobAnchor || params.ownedWorker === true || parentLineageFds.length > 0,
         stdio,

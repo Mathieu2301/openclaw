@@ -1,5 +1,8 @@
 import { isGatewayLoopbackHost } from "../../packages/gateway-client/src/websocket-transport.js";
-import { WORKER_LINEAGE_START_PROTOCOL_FEATURE } from "../../packages/gateway-protocol/src/schema/worker-admission.js";
+import {
+  WORKER_LINEAGE_START_PROTOCOL_FEATURE,
+  WORKER_NATIVE_PROCESS_OWNER_PROTOCOL_FEATURE,
+} from "../../packages/gateway-protocol/src/schema/worker-admission.js";
 import {
   createChildAdapter,
   type AwaitedStdoutChildAdapter,
@@ -101,6 +104,11 @@ export async function prepareNodeWorkerLaunchTransport(
     ) {
       const { adapter, ready } = await createServiceChildRelayAdapter({
         ...workerOptions,
+        ...(options.descriptor.admission.handshake.protocolFeatures.includes(
+          WORKER_NATIVE_PROCESS_OWNER_PROTOCOL_FEATURE,
+        )
+          ? { nativeProcessOwnerSupported: true as const }
+          : {}),
         cleanupBinding: await options.store.cleanupBinding({
           launchId: options.input.launchId,
           planHash: options.planHash,
@@ -111,7 +119,7 @@ export async function prepareNodeWorkerLaunchTransport(
         oomScoreWrapperSelected: false,
       });
       await ready;
-      return { kind: "started", adapter, cleanupMode: "owned-anchor" };
+      return { kind: "started", adapter, cleanupMode: adapter.treeOwnership ?? "owned-anchor" };
     }
     const { adapter, ready } = await createChildAdapter({
       ...workerOptions,
