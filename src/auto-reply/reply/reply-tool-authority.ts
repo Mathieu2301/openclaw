@@ -233,7 +233,6 @@ function resolveReplyToolAuthorityContext(
     sessionKey: execution.sessionKey,
     sandboxSessionKey: policySessionKey,
     agentId: execution.agentId,
-    agentDir: execution.agentDir,
     agentAccountId: execution.agentAccountId,
     modelProvider: provider,
     modelId: model,

@@ -126,9 +126,8 @@ const ToolAuthoritySchema = workerProtocolObject({
     )
     .transform((names) => [...names]),
   exec: ExecAuthoritySchema.optional(),
-}).transform(
-  ({ exec, ...authority }): WorkerToolAuthority =>
-    exec === undefined ? authority : { ...authority, exec },
+}).transform(({ exec, ...authority }): WorkerToolAuthority =>
+  exec === undefined ? authority : { ...authority, exec },
 );
 const BrowserLaunchSchema = workerProtocolObject({
   cdpUrl: z.string().refine((value) => {

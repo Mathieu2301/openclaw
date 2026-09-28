@@ -104,14 +104,8 @@ describe("resolveConversationCapabilityProfile", () => {
       senderId: "guest",
       modelProvider: "openai",
       modelId: "gpt-5.5",
-      modelApi: "responses",
       workspaceDir: "/tmp/openclaw-direct-profile",
       cwd: "/tmp/openclaw-direct-profile/task",
-      agentDir: "/tmp/openclaw-agent-direct-profile",
-      skillsSnapshot: {
-        prompt: "",
-        skills: [{ name: "ops" }],
-      },
     });
 
     expect(profile.policy.senderPolicy).toEqual({ deny: ["exec", "process"] });

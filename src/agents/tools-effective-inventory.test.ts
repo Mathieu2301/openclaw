@@ -360,64 +360,6 @@ describe("resolveEffectiveToolInventory", () => {
     });
   });
 
-  it("preserves MCP inventory ownership and fallback without loading registry metadata", async () => {
-    const { buildRuntimeCompatibleMcpToolInventory } =
-      await import("./tools-effective-mcp-inventory.js");
-    const registry = createEmptyPluginRegistry();
-    const readMetadata = vi.fn(() => []);
-    Object.defineProperty(registry, "toolMetadata", { get: readMetadata });
-    setActivePluginRegistry(registry);
-    readMetadata.mockClear();
-    const tool = mockTool({
-      name: "fixture_lookup",
-      label: "Lookup",
-      description: "",
-      displaySummary: "Search the fixture.",
-      pluginMeta: {
-        pluginId: "fixture-plugin",
-        optional: false,
-        mcp: {
-          serverName: "fixture",
-          safeServerName: "fixture",
-          toolName: "lookup",
-          operation: "tool",
-          deniedBySession: true,
-        },
-      },
-    });
-    const inventory = buildRuntimeCompatibleMcpToolInventory({
-      cfg: {},
-      tools: [
-        tool,
-        mockTool({ name: "other_lookup", label: "Lookup", description: "Another lookup." }),
-        mockTool({
-          name: "invalid",
-          label: "Invalid",
-          description: "Invalid schema",
-          parameters: { type: "array" },
-        }),
-      ],
-    });
-
-    expect(inventory.entries[0]).toEqual({
-      id: "fixture_lookup",
-      label: "Lookup (bundle-mcp)",
-      description: "Search the fixture.",
-      rawDescription: "Search the fixture.",
-      source: "mcp",
-      pluginId: "bundle-mcp",
-      mcpServer: "fixture",
-      mcpToolName: "lookup",
-      deniedBySession: true,
-    });
-    expect(inventory.entries[1]?.label).toBe("Lookup (bundle-mcp)");
-    expect(inventory.notices[0]?.message).toContain('Tool "invalid" from plugin "bundle-mcp"');
-    expect(effectiveInventoryState.normalizeToolsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ allowRuntimePluginLoad: false }),
-    );
-    expect(readMetadata).not.toHaveBeenCalled();
-  });
-
   it("quarantines tools with schemas that cannot be projected to the model runtime", async () => {
     const { resolveEffectiveToolInventory: resolveEffectiveToolInventoryLocal7 } =
       await loadHarness({

@@ -7,7 +7,7 @@ import {
   type WorkerSessionTurnClaim,
 } from "./placement-record.js";
 import { find, getRequired, query } from "./placement-row-codec.js";
-import type { WorkerSessionToolOperationStart } from "./placement-session-tool-operations.worker-contract.js";
+import type { WorkerSessionToolOperationStart } from "./placement-session-tool-operations.receipt.js";
 import { publishPlacementTurnToolState } from "./placement-turn-authority.js";
 
 type WorkerTurnToolStateIdentity = {

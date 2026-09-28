@@ -127,7 +127,6 @@ function canSelfServeLocalPaths(params: {
   ctx: MsgContext;
   cfg: OpenClawConfig;
   agentId: string;
-  agentDir?: string;
   sessionKey?: string;
   workspaceDir: string;
   provider: string;
@@ -164,7 +163,6 @@ function canSelfServeLocalPaths(params: {
     sessionKey: policySessionKey,
     runSessionKey: policySessionKey === params.sessionKey ? undefined : params.sessionKey,
     agentId: params.agentId,
-    agentDir: params.agentDir,
     agentAccountId: params.ctx.AccountId,
     messageProvider: resolveOriginMessageProvider({
       originatingChannel: params.ctx.OriginatingChannel,
@@ -1099,7 +1097,6 @@ export async function getReplyFromConfig(
       ctx: sessionCtx,
       cfg,
       agentId,
-      agentDir,
       sessionKey,
       workspaceDir,
       provider: runProvider,

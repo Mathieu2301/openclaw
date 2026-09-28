@@ -65,7 +65,6 @@ export * from "./schema/projects.js";
 export * from "./schema/wizard.js";
 export * from "./schema/worker-admission.js";
 export * from "./schema/worker-inference.js";
-export * from "./schema/worker-gateway-tool.js";
 export * from "./schema/worktrees.js";
 export * from "./schema/tools-catalog.js";
 export * from "./schema/transcripts.js";

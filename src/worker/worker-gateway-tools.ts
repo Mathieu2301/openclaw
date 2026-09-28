@@ -4,7 +4,7 @@ import { bindBeforeToolCallMetadata } from "../agents/before-tool-call-metadata.
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { WorkerConnection } from "./worker-connection.js";
 
-export function createWorkerGatewayTools(
+export function createWorkerGatewayToolProxies(
   surface: WorkerToolSurface,
   client: Pick<WorkerConnection, "invokeGatewayTool" | "cancelGatewayTool">,
 ): AnyAgentTool[] {

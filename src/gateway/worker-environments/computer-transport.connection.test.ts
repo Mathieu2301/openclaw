@@ -25,7 +25,7 @@ import {
 import { createWorkerComputerTool } from "../../worker/computer-runtime.js";
 import { parseNodeWorkerComputerInput } from "../../worker/node-computer-protocol.js";
 import { WorkerConnection } from "../../worker/worker-connection.js";
-import { createWorkerGatewayTools } from "../../worker/worker-gateway-tools.js";
+import { createWorkerGatewayToolProxies } from "../../worker/worker-gateway-tools.js";
 import { GatewayConnectionWork } from "../server-connection-work.js";
 import {
   attachWorkerWsMessageHandler,
@@ -233,7 +233,7 @@ describe("worker computer connection lifetime", () => {
         if (!hello.toolSurface) {
           throw new Error("Expected the admitted Gateway tool surface");
         }
-        const send = createWorkerGatewayTools(hello.toolSurface, connection)[0]!;
+        const send = createWorkerGatewayToolProxies(hello.toolSurface, connection)[0]!;
         const durable = send
           .execute("durable-send", { sessionKey: "agent:main:child", message: "continue" })
           .catch((error: unknown) => error);

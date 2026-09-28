@@ -37,7 +37,7 @@ import type { WorkerTranscriptCommitApplication } from "./transcript-commit.js";
 import type {
   WorkerGatewayToolRuntime,
   WorkerGatewayToolSink,
-} from "./worker-gateway-tool-runtime.js";
+} from "./worker-gateway-tool-contract.js";
 import { workerSessionToolErrorResult } from "./worker-session-tool-result.js";
 import {
   createWorkerComputerRpc,

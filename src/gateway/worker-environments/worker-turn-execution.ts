@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { SKILL_RESOURCE_PROTOCOL_FEATURE } from "../../../packages/gateway-protocol/src/schema/skill-resources.js";
 import { WORKER_GATEWAY_TOOLS_PROTOCOL_FEATURE } from "../../../packages/gateway-protocol/src/schema/worker-gateway-tool.js";
 import { readRunOperatorAuthority } from "../../agents/admitted-run-context.js";
@@ -23,7 +22,6 @@ import {
   prepareActiveNodeContext,
 } from "../../infra/active-node-context.js";
 import { registerAgentRunDelegatedAuthorityClosedHandler } from "../../infra/agent-run-registry.js";
-import { redactSensitiveText } from "../../logging/redact.js";
 import { buildPersistedUserTurnMessage } from "../../sessions/user-turn-transcript.js";
 import { prepareSkillResourceDelivery } from "../../skills/runtime/resources.js";
 import { createWorkerBrowserToolDefinition } from "../../worker/browser-runtime.js";
@@ -42,10 +40,8 @@ import {
   getWorkerTurnToolSurface,
 } from "./placement-turn-claim-events.js";
 import { prepareWorkerDesktopLaunchPlan } from "./worker-desktop-launch-plan.js";
-import {
-  createWorkerGatewayToolRuntime,
-  type WorkerGatewayToolRuntime,
-} from "./worker-gateway-tool-runtime.js";
+import type { WorkerGatewayToolRuntime } from "./worker-gateway-tool-contract.js";
+import { createWorkerGatewayToolRuntime } from "./worker-gateway-tool-runtime.js";
 import { prepareWorkerGitHubBinding } from "./worker-github-binding.js";
 import { waitForTurnOperation } from "./worker-turn-admission.js";
 import {
@@ -59,7 +55,7 @@ import {
   buildWorkerTurnResult,
   emitProviderReplayRejected,
   fitLaunchDescriptorWithRuntimeIdentity,
-  parseRuntimeResult,
+  parseWorkerTurnProcessResult,
   prepareWorkerAgentRuntimeIdentity,
   windowInitialMessages,
 } from "./worker-turn-payload.js";
@@ -629,22 +625,7 @@ export async function executeWorkerTurn(
     if (!dispatchReady) {
       throw new Error("Cloud worker launch completed before transport dispatch");
     }
-    if (processResult.code !== 0 || processResult.signal !== null || processResult.killed) {
-      // Boxes are destroyed on failure, so the redacted stderr tail is the only forensics.
-      const detail = truncateUtf16Safe(
-        redactSensitiveText(processResult.stderr, { mode: "tools" }).replace(/\s+/gu, " ").trim(),
-        400,
-      );
-      throw new Error(
-        detail
-          ? `Cloud worker process failed before completing the turn: ${detail}`
-          : "Cloud worker process failed before completing the turn",
-      );
-    }
-    const runtimeResult = parseRuntimeResult(processResult.stdout);
-    if (runtimeResult.status === "fenced") {
-      throw new Error(`Cloud worker turn was fenced: ${runtimeResult.reason}`);
-    }
+    const runtimeResult = parseWorkerTurnProcessResult(processResult);
     const workerTurnFailed = runtimeResult.status === "failed";
 
     // A terminal result settles under its pending-result owner, even after execution ends.

@@ -357,7 +357,6 @@ export function resolveEffectiveToolInventory(
       config: params.cfg,
       agentId,
       agentAccountId: params.accountId,
-      modelApi: runtimeModelContext.modelApi ?? undefined,
     });
   const diagnostics = createToolAccessDiagnostics({ profiles: capabilityProfile.policy.profiles });
   const effectiveTools = createOpenClawCodingToolsInternal(

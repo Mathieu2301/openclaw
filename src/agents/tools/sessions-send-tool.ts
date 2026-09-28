@@ -8,7 +8,6 @@ import type { SessionDeliveryGeneration } from "../../config/sessions/session-de
 import { resolvePersistedSessionStoreOwnerForKey } from "../../config/sessions/session-store-owner.js";
 import { parseSessionThreadInfo } from "../../config/sessions/thread-info.js";
 import type { AgentRouteBinding } from "../../config/types.agents.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { shouldResumeParentSubagent } from "../../gateway/session-subagent-resume.js";
 import { resolveGatewaySessionStoreTargetWithStore } from "../../gateway/session-utils-store-lookup.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -30,7 +29,6 @@ import {
   normalizeAccountId,
   normalizeAgentId,
   normalizeAgentIdStrict,
-  toAgentStoreSessionKey,
 } from "../../routing/session-key.js";
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
 import { deriveSessionChatTypeFromKey } from "../../sessions/session-chat-type-shared.js";
@@ -43,7 +41,7 @@ import { recordSessionParticipantBestEffort } from "../../sessions/session-parti
 import { registerSessionStateWatch } from "../../sessions/session-state-events.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { listAgentIds, resolveSessionAgentId } from "../agent-scope.js";
+import { resolveSessionAgentId } from "../agent-scope.js";
 import { resolveNestedAgentLaneForSession } from "../lanes.js";
 import { isTerminalAgentWaitTimeout, waitForAgentRunReply } from "../run-wait.js";
 import { isSubagentSessionFromEntry } from "../subagents/spawn/subagent-depth-policy.js";
@@ -54,12 +52,7 @@ import {
 import { ToolInputError } from "../tool-input-error.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readNonNegativeIntegerParam, readToolStringParam } from "./common.js";
-import {
-  callAgentToolGatewayRequest,
-  callInProcessGatewayToolWithCreation,
-  hasInProcessGatewayToolContext,
-  type AgentToolGatewayRequestCaller as GatewayCaller,
-} from "./in-process-gateway.js";
+import { callAgentToolGatewayRequest } from "./in-process-gateway.js";
 import { runWithScopedSessionAccess } from "./scoped-session-access.js";
 import {
   createSessionVisibilityRowChecker,
@@ -81,6 +74,11 @@ import {
   startSessionsSendFollowup,
 } from "./sessions-send-followup.js";
 import { buildAgentToAgentMessageContext } from "./sessions-send-helpers.js";
+import {
+  createConfiguredAgentMainSession,
+  isConfiguredAgentMainSessionKey,
+  resolveConfiguredAgentMainSessionKey,
+} from "./sessions-send-main-session.js";
 import { startSessionsSendReplyFlow } from "./sessions-send-reply-flow.js";
 import { captureSessionsSendResumeCaller, resumeSessionsSendTask } from "./sessions-send-resume.js";
 import { normalizeSessionsSendArguments } from "./sessions-send-tool.arguments.js";
@@ -98,84 +96,6 @@ function sendFailure(status: "error" | "forbidden", error: string, sessionKey?: 
     error,
     ...(sessionKey !== undefined ? { sessionKey } : {}),
   });
-}
-
-function resolveConfiguredAgentMainSessionKey(params: {
-  cfg: OpenClawConfig;
-  agentId: string;
-  mainKey: string;
-}): string | undefined {
-  const agentId = normalizeAgentId(params.agentId);
-  if (!listAgentIds(params.cfg).includes(agentId)) {
-    return undefined;
-  }
-  return toAgentStoreSessionKey({
-    agentId,
-    requestKey: "main",
-    mainKey: params.mainKey,
-  });
-}
-
-function isConfiguredAgentMainSessionKey(params: {
-  cfg: OpenClawConfig;
-  agentId?: string;
-  sessionKey: string;
-  mainKey: string;
-}): boolean {
-  if (isUnscopedSessionKeySentinel(params.sessionKey)) {
-    return false;
-  }
-  if (params.sessionKey === params.mainKey) {
-    return true;
-  }
-  const agentId = params.agentId ?? parseAgentSessionKey(params.sessionKey)?.agentId;
-  return agentId
-    ? params.sessionKey ===
-        resolveConfiguredAgentMainSessionKey({
-          cfg: params.cfg,
-          agentId,
-          mainKey: params.mainKey,
-        })
-    : false;
-}
-
-async function createConfiguredAgentMainSession(params: {
-  cfg: OpenClawConfig;
-  callGateway: GatewayCaller;
-  agentId?: string;
-  sessionKey: string;
-  requesterSessionKey?: string;
-  useTrustedInProcessCreation: boolean;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const targetAgentId =
-    params.agentId ?? resolveSessionAgentId({ config: params.cfg, sessionKey: params.sessionKey });
-  try {
-    const createParams = {
-      key: params.sessionKey,
-      agentId: targetAgentId,
-    };
-    if (
-      params.useTrustedInProcessCreation &&
-      params.requesterSessionKey &&
-      hasInProcessGatewayToolContext()
-    ) {
-      // sessions.create serializes keyed creation and adopts an existing row,
-      // so concurrent first sends can safely race after the missing resolution.
-      await callInProcessGatewayToolWithCreation("sessions.create", createParams, {
-        via: "internal",
-        actor: { type: "agent", id: params.requesterSessionKey },
-      });
-    } else {
-      await params.callGateway({
-        method: "sessions.create",
-        params: createParams,
-        timeoutMs: 10_000,
-      });
-    }
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, error: formatErrorMessage(err) };
-  }
 }
 
 export function createSessionsSendTool(opts?: SessionsSendToolOptions): AnyAgentTool {
@@ -679,9 +599,8 @@ export function createSessionsSendTool(opts?: SessionsSendToolOptions): AnyAgent
               });
             }
             const createdSession = await createConfiguredAgentMainSession({
-              cfg,
               callGateway: gatewayCall,
-              ...(targetAgentId ? { agentId: targetAgentId } : {}),
+              agentId: targetAgentId,
               sessionKey: resolvedKey,
               requesterSessionKey,
               useTrustedInProcessCreation: opts?.callGateway === undefined,

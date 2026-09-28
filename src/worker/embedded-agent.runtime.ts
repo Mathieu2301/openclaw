@@ -40,7 +40,7 @@ import {
 import type { WorkerBrowserLaunchDescriptor, WorkerLaunchPlan } from "./launch-descriptor.js";
 import type { WorkerToolAuthority, WorkerToolName } from "./tool-authority.js";
 import { WORKER_PROVIDER_REPLAY_LOCAL_RETRY_MESSAGE } from "./transcript-message.js";
-import { createWorkerGatewayTools } from "./worker-gateway-tools.js";
+import { createWorkerGatewayToolProxies } from "./worker-gateway-tools.js";
 import { createWorkerPlacementTools, WORKER_TOOL_CONFIG } from "./worker-placement-tools.js";
 
 function toWorkerAgentError(value: unknown, fallback: string): Error {
@@ -77,7 +77,7 @@ type RunWorkerEmbeddedTurnParams = {
   inference: WorkerEmbeddedInferenceClient;
   transcript: WorkerTranscriptClient;
   live: WorkerLiveClient;
-  gatewayTools: Parameters<typeof createWorkerGatewayTools>[1];
+  gatewayTools: Parameters<typeof createWorkerGatewayToolProxies>[1];
   toolSurface: WorkerToolSurface;
   bootstrapFiles: Awaited<ReturnType<typeof loadWorkspaceBootstrapFiles>>;
   initialMessages?: WorkerTranscriptMessage[];
@@ -257,7 +257,10 @@ async function runWorkerEmbeddedTurnWithResources(
         ].map((tool) => [tool.name, tool]),
       );
       const gatewayTools = new Map(
-        createWorkerGatewayTools(toolSurface, params.gatewayTools).map((tool) => [tool.name, tool]),
+        createWorkerGatewayToolProxies(toolSurface, params.gatewayTools).map((tool) => [
+          tool.name,
+          tool,
+        ]),
       );
       const tools = toolSurface.tools.map((entry) => {
         if (entry.execution === "gateway") {

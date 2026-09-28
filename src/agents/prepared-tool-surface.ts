@@ -1,7 +1,4 @@
-import {
-  normalizeLowercaseStringOrEmpty,
-  normalizeOptionalLowercaseString,
-} from "@openclaw/normalization-core/string-coerce";
+import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawCodingToolsOptions } from "./agent-tools.options.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import type { ApplyPatchContainmentSource } from "./apply-patch-containment-hint.js";
@@ -71,11 +68,10 @@ function isApplyPatchAllowedForModel(
   if (!Array.isArray(allowModels) || allowModels.length === 0) {
     return true;
   }
-  const modelId = options.modelId?.trim();
-  if (!modelId) {
+  const normalizedModelId = normalizeOptionalLowercaseString(options.modelId);
+  if (!normalizedModelId) {
     return false;
   }
-  const normalizedModelId = normalizeLowercaseStringOrEmpty(modelId);
   const provider = normalizeOptionalLowercaseString(options.modelProvider);
   const normalizedFull =
     provider && !normalizedModelId.includes("/")

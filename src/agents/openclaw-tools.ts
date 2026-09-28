@@ -413,26 +413,23 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
         }),
     progressCardTool,
     ...swarmToolGroups.structuredOutput,
-    shouldIncludePrimarySessionToolForOpenClawTools("ask_user", {
-      ...options,
-      agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-    })
-      ? createAskUserTool({
-          ...options,
-          agentId: sessionAgentId,
-          sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-        })
-      : null,
-    shouldIncludePrimarySessionToolForOpenClawTools("secrets", {
-      ...options,
-      agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-    })
-      ? createSecretsTool({
-          ...options,
-          agentId: sessionAgentId,
-          sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-        })
-      : null,
+    ...(
+      [
+        ["ask_user", createAskUserTool],
+        ["secrets", createSecretsTool],
+      ] as const
+    ).map(([name, createTool]) =>
+      shouldIncludePrimarySessionToolForOpenClawTools(name, {
+        ...options,
+        agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+      })
+        ? createTool({
+            ...options,
+            agentId: sessionAgentId,
+            sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+          })
+        : null,
+    ),
     createSessionsListTool({
       ...sessionLookupToolOptions,
       requesterAgentIdOverride: sessionAgentId,

@@ -8,8 +8,8 @@ import type { createPlacementSessionToolOperationKernel } from "./placement-sess
 import {
   PlacementSessionToolReceiptSchema,
   type PlacementSessionToolReceipt,
-  type PlacementSessionToolWorkerOperations,
-} from "./placement-session-tool-operations.worker-contract.js";
+} from "./placement-session-tool-operations.receipt.js";
+import type { PlacementSessionToolWorkerOperations } from "./placement-session-tool-operations.worker-contract.js";
 import {
   isPlacementTurnToolAuthorized,
   stagePlacementTurnToolWorkerPublication,

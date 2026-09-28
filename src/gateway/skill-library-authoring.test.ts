@@ -308,7 +308,7 @@ it("serves worker Workshop through the same Gateway capability and rejects a los
     await import("./worker-environments/worker-gateway-tool-runtime.js");
   const { createWorkerWorkshopCallRetention } =
     await import("./worker-environments/worker-session-tool-executor.js");
-  const { createWorkerGatewayTools } = await import("../worker/worker-gateway-tools.js");
+  const { createWorkerGatewayToolProxies } = await import("../worker/worker-gateway-tools.js");
   const claim = {
     sessionId: "shared",
     runId: "worker-personal-turn",
@@ -372,7 +372,7 @@ it("serves worker Workshop through the same Gateway capability and rejects a los
     protocolFeatures: [],
     credentialExpiresAtMs: 1,
   };
-  const proxy = createWorkerGatewayTools(await runtime.getSurface(identity), {
+  const proxy = createWorkerGatewayToolProxies(await runtime.getSurface(identity), {
     invokeGatewayTool: async (input, options) => ({
       type: "res",
       id: "test",

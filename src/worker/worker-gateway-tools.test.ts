@@ -6,7 +6,7 @@ import type {
 import { createDeferred } from "../../test/helpers/promise.js";
 import { toToolDefinitions } from "../agents/agent-tool-definition-adapter.js";
 import { prepareCoreToolPolicy } from "../agents/prepared-tool-surface.js";
-import { createWorkerGatewayTools } from "./worker-gateway-tools.js";
+import { createWorkerGatewayToolProxies } from "./worker-gateway-tools.js";
 
 function fixture() {
   const surface: WorkerToolSurface = {
@@ -32,22 +32,22 @@ function fixture() {
     details: { status: "sent" },
   };
   const client = {
-    invokeGatewayTool: vi.fn<Parameters<typeof createWorkerGatewayTools>[1]["invokeGatewayTool"]>(
-      async () => ({
-        type: "res",
-        id: "response-1",
-        ok: true,
-        payload: result,
-      }),
-    ),
-    cancelGatewayTool: vi.fn<Parameters<typeof createWorkerGatewayTools>[1]["cancelGatewayTool"]>(
-      async () => ({
-        type: "res",
-        id: "cancel-1",
-        ok: true,
-        payload: { cancelled: true },
-      }),
-    ),
+    invokeGatewayTool: vi.fn<
+      Parameters<typeof createWorkerGatewayToolProxies>[1]["invokeGatewayTool"]
+    >(async () => ({
+      type: "res",
+      id: "response-1",
+      ok: true,
+      payload: result,
+    })),
+    cancelGatewayTool: vi.fn<
+      Parameters<typeof createWorkerGatewayToolProxies>[1]["cancelGatewayTool"]
+    >(async () => ({
+      type: "res",
+      id: "cancel-1",
+      ok: true,
+      payload: { cancelled: true },
+    })),
   };
   return { surface, result, client };
 }
@@ -59,7 +59,7 @@ describe("worker Gateway tool transport", () => {
       options?.onUpdate?.({ content: [{ type: "text", text: "working" }] });
       return { type: "res", id: "response-1", ok: true, payload: result };
     });
-    const tools = createWorkerGatewayTools(surface, client);
+    const tools = createWorkerGatewayToolProxies(surface, client);
     expect(JSON.stringify(toToolDefinitions(tools))).toBe(
       JSON.stringify(surface.tools.map((entry) => entry.definition)),
     );
@@ -86,7 +86,7 @@ describe("worker Gateway tool transport", () => {
     const pending = createDeferred<WorkerGatewayToolResponseFrame>();
     client.invokeGatewayTool.mockReturnValueOnce(pending.promise);
     const signal = new AbortController();
-    const [tool] = createWorkerGatewayTools(surface, client);
+    const [tool] = createWorkerGatewayToolProxies(surface, client);
     const execution = tool!.execute("call-abort", {}, signal.signal);
     expect(client.invokeGatewayTool.mock.calls[0]?.[1]?.signal).toBe(signal.signal);
     signal.abort(new Error("turn closed"));
@@ -102,7 +102,7 @@ describe("worker Gateway tool transport", () => {
 
   it("rejects non-object arguments and surfaces Gateway failures", async () => {
     const { surface, client } = fixture();
-    const [tool] = createWorkerGatewayTools(surface, client);
+    const [tool] = createWorkerGatewayToolProxies(surface, client);
     await expect(tool!.execute("bad-args", [])).rejects.toThrow("must be an object");
     expect(client.invokeGatewayTool).not.toHaveBeenCalled();
     client.invokeGatewayTool.mockResolvedValueOnce({
@@ -126,7 +126,7 @@ describe("worker Gateway tool transport", () => {
       defaultSeconds: 30,
       paddingMs: 60_000,
     };
-    const [tool] = createWorkerGatewayTools(surface, client);
+    const [tool] = createWorkerGatewayToolProxies(surface, client);
     await tool!.execute("default", {});
     await tool!.execute("long", { timeoutSeconds: 600 });
     expect(client.invokeGatewayTool.mock.calls.map((call) => call[1]?.timeoutMs)).toEqual([

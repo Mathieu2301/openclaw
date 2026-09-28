@@ -8,10 +8,8 @@ import {
   type OpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
 import { createPlacementSessionToolOperationKernel } from "./placement-session-tool-operations.kernel.js";
-import type {
-  PlacementSessionToolReceipt,
-  PlacementSessionToolWorkerOperations,
-} from "./placement-session-tool-operations.worker-contract.js";
+import type { PlacementSessionToolReceipt } from "./placement-session-tool-operations.receipt.js";
+import type { PlacementSessionToolWorkerOperations } from "./placement-session-tool-operations.worker-contract.js";
 
 export function executePlacementSessionToolCommand(
   command: SqliteWorkerCommand<PlacementSessionToolWorkerOperations>,

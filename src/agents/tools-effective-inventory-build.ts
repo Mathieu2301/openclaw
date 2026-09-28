@@ -28,10 +28,10 @@ function resolveEffectiveToolSource(
   const pluginMeta =
     getPluginToolMeta(tool) ?? (fallbackTool ? getPluginToolMeta(fallbackTool) : undefined);
   if (pluginMeta) {
-    if (pluginMeta.mcp || pluginMeta.pluginId === "bundle-mcp") {
-      return { source: "mcp", pluginId: pluginMeta.pluginId };
-    }
-    return { source: "plugin", pluginId: pluginMeta.pluginId };
+    return {
+      source: pluginMeta.mcp || pluginMeta.pluginId === "bundle-mcp" ? "mcp" : "plugin",
+      pluginId: pluginMeta.pluginId,
+    };
   }
   const channelMeta =
     getChannelAgentToolMeta(tool as never) ??

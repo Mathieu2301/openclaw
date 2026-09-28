@@ -3,8 +3,6 @@ import { Value } from "typebox/value";
 import {
   isWorkerGatewayToolFrameWithinBudget,
   WorkerToolSurfaceSchema,
-  type WorkerGatewayToolCancelParams,
-  type WorkerGatewayToolInvokeParams,
   type WorkerGatewayToolResult,
   type WorkerGatewayToolUpdateFrame,
   type WorkerToolSurface,
@@ -13,12 +11,14 @@ import { getAgentToolExecutionLocation } from "../../agents/agent-tool-metadata.
 import { projectAgentToolDefinition } from "../../agents/prepared-tool-surface.js";
 import type { AnyAgentTool } from "../../agents/tools/common.js";
 import type { WorkerConnectionIdentity } from "./connection-identity.js";
+import type {
+  WorkerGatewayToolRuntime,
+  WorkerGatewayToolSink,
+} from "./worker-gateway-tool-contract.js";
 import {
   boundWorkerToolResult as bounded,
   workerSessionToolErrorResult,
 } from "./worker-session-tool-result.js";
-
-export type WorkerGatewayToolSink = { send(frame: WorkerGatewayToolUpdateFrame): void };
 
 /** Retained by the admitted turn owner; neither IDs nor a prepared catalog grant authority. */
 export function createWorkerGatewayToolRuntime(params: {
@@ -28,7 +28,7 @@ export function createWorkerGatewayToolRuntime(params: {
     tools: AnyAgentTool[];
     policy: WorkerToolSurface["policy"];
   }>;
-}) {
+}): WorkerGatewayToolRuntime {
   const generation = randomUUID();
   const lifetime = new AbortController();
   const signal = AbortSignal.any([params.signal, lifetime.signal]);
@@ -83,17 +83,12 @@ export function createWorkerGatewayToolRuntime(params: {
   >();
   let sequential: Promise<unknown> = Promise.resolve();
   return {
-    async getSurface(identity: WorkerConnectionIdentity) {
+    async getSurface(identity) {
       const { surface } = await prepare(identity);
       assertCurrent();
       return surface;
     },
-    async invoke(
-      identity: WorkerConnectionIdentity,
-      request: WorkerGatewayToolInvokeParams,
-      sink: WorkerGatewayToolSink,
-      connectionSignal?: AbortSignal,
-    ) {
+    async invoke(identity, request, sink, connectionSignal) {
       const { tools } = await prepare(identity);
       assertCurrent();
       const tool = tools.get(request.toolId);
@@ -183,7 +178,7 @@ export function createWorkerGatewayToolRuntime(params: {
         }
       }
     },
-    cancel(request: WorkerGatewayToolCancelParams) {
+    cancel(request) {
       assertCurrent();
       if (request.generation !== generation) {
         throw new Error("Worker tool generation is unavailable");
@@ -201,5 +196,3 @@ export function createWorkerGatewayToolRuntime(params: {
     },
   };
 }
-
-export type WorkerGatewayToolRuntime = ReturnType<typeof createWorkerGatewayToolRuntime>;
