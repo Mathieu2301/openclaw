@@ -241,6 +241,8 @@ describeStandaloneMockServer("standalone Control UI mock server", () => {
     async ({ sessionKey, user, assistant }) => {
       const page = await browser.newPage();
       try {
+        // Compare complete snapshots at one sampling time; real timers still advance.
+        await page.clock.setFixedTime(new Date());
         await page.goto(new URL("/chat", fixtureServer.url).toString());
         await page.getByRole("textbox", { name: "Chat composer", exact: true }).waitFor();
         const [description] = (await requestPreviewGateway(page, [
