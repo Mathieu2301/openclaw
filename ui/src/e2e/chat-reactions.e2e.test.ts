@@ -61,7 +61,17 @@ async function expectCompactPicker(picker: Locator) {
       .closest("openclaw-chat-message-reactions")!
       .querySelector(".chat-reaction-add")!
       .getBoundingClientRect();
+    const pickerEmoji = getComputedStyle(element.querySelector(".chat-reaction-picker button")!);
+    const reactionEmoji = getComputedStyle(
+      element
+        .closest("openclaw-chat-message-reactions")!
+        .querySelector(".chat-reaction-toggle span")!,
+    );
     return {
+      pickerEmojiSize: pickerEmoji.fontSize,
+      reactionEmojiSize: reactionEmoji.fontSize,
+      pickerEmojiFont: pickerEmoji.fontFamily,
+      reactionEmojiFont: reactionEmoji.fontFamily,
       width: box.width,
       height: box.height,
       center: (box.left + box.right) / 2,
@@ -76,6 +86,8 @@ async function expectCompactPicker(picker: Locator) {
       editing: element.ownerDocument.activeElement instanceof HTMLInputElement,
     };
   });
+  expect(geometry.pickerEmojiSize).toBe(geometry.reactionEmojiSize);
+  expect(geometry.pickerEmojiFont).toBe(geometry.reactionEmojiFont);
   expect(geometry.width).toBeLessThanOrEqual(210);
   expect(Math.abs(geometry.center - geometry.triggerCenter)).toBeLessThanOrEqual(1);
   expect(geometry.height).toBeLessThanOrEqual(160);
