@@ -523,6 +523,7 @@ export async function runBuildAllSteps(
   profile: string,
   params: {
     cacheEnabled?: boolean;
+    signal?: AbortSignal;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     finalizeCache?: typeof finalizeBuildStepCache;
@@ -537,7 +538,9 @@ export async function runBuildAllSteps(
     steps?: BuildAllStep[];
   } = {},
 ): Promise<BuildAllResult> {
+  params.signal?.throwIfAborted();
   await preflightInstalledSourceArtifacts(params.env ?? process.env);
+  params.signal?.throwIfAborted();
   const { env: buildEnv, heapShortfall } = resolveBuildAllTsdownPlan(
     profile,
     resolveBuildAllEnvironment(params.env),
@@ -551,6 +554,7 @@ export async function runBuildAllSteps(
   const fence = await resolveLiveManagedGatewayDistFence(params.cwd ?? process.cwd(), {
     env: buildEnv,
   });
+  params.signal?.throwIfAborted();
   if (fence.refuse) {
     logger.error(fence.message);
     return {
@@ -578,6 +582,7 @@ export async function runBuildAllSteps(
               ? distArtifactEntryArgs(script, invocation.args.slice(3))
               : invocation.args,
           ...invocation.options,
+          signal: params.signal,
           requireProcessTreeExit: process.platform !== "win32",
         }),
       };
@@ -592,6 +597,7 @@ export async function runBuildAllSteps(
     logger.warn(heapShortfall.message);
   }
   for (const step of steps) {
+    params.signal?.throwIfAborted();
     const cacheStartedAt = now();
     const cacheState = resolveCacheState(step, { env: buildEnv });
     const cacheDurationMs = now() - cacheStartedAt;
@@ -615,6 +621,7 @@ export async function runBuildAllSteps(
     logger.error(`[build-all] ${step.label}${reusedCache ? " (cache restored)" : ""}`);
     const invocation = resolveBuildAllStep(stepToRun, { env: buildEnv });
     const result = await runStep(invocation);
+    params.signal?.throwIfAborted();
     const durationMs = cacheDurationMs + now() - startedAt;
     if (result.status !== 0) {
       timings.push({ label: step.label, status: "failed", durationMs });

@@ -37,6 +37,15 @@ detached descendants stopped. Before manually removing an abandoned lock directo
 inspect its `owner.json` and verify all associated build, compiler, and lint
 processes, including detached descendants, have stopped; then retry the command.
 
+Runtime-consuming tests prepare checkout artifacts through the explicit build owner,
+not by launching the CLI with `--version`. Preparation reuses source-runner freshness
+checks and checkout artifact ownership, and refuses immutable deployments and known
+live Gateway overlap through the same build fence as `pnpm build`. It does not take
+updater service or database-maintenance custody. An unreadable service is not proof
+that it is absent: this existing best-effort build fence is not a sandbox. Use the
+isolated test runner when filesystem isolation is required. Automatic source-CLI
+rebuilds and actual update publication retain their stricter service checks.
+
 Lint reports its final failure on stderr after child joins and artifact ownership
 have settled, including retained ownership when cleanup is uncertain. Standalone
 Oxlint and its shard CLI end with `[oxlint] FAILED (exit N)`; `pnpm lint` owns the

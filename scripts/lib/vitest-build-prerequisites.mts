@@ -443,7 +443,7 @@ export async function prepareVitestRuntime(
     console.error(`[test] preparing ${mode} runtime before Vitest workers`);
     const code = await runManagedCommand({
       bin: process.execPath,
-      args: ["scripts/run-node.mjs", "--version"],
+      args: ["scripts/prepare-vitest-runtime.mjs"],
       cwd,
       env: { ...env, ...(mode === "private-qa" ? { OPENCLAW_BUILD_PRIVATE_QA: "1" } : {}) },
       signal: options.signal,
@@ -543,7 +543,7 @@ export async function runE2eGlobalSetup(
   }
   const commands = [
     {
-      args: ["scripts/run-node.mjs", "--version"],
+      args: ["scripts/prepare-vitest-runtime.mjs"],
       env: {
         ...env,
         OPENCLAW_BUILD_PRIVATE_QA: "1",
