@@ -733,28 +733,30 @@ suite.define(() => {
     await page.clock.install();
     await buildLink.hover();
     await page.clock.runFor(600);
-    const hoverCardMotion = await sidebar
-      .locator("openclaw-sidebar-build-chip openclaw-tooltip")
-      .evaluate((tooltip) => {
-        const webAwesomeTooltip = tooltip.shadowRoot?.querySelector("wa-tooltip");
-        const popup = webAwesomeTooltip?.shadowRoot?.querySelector("wa-popup");
-        const popupSurface = popup?.shadowRoot?.querySelector<HTMLElement>('[part~="popup"]');
-        if (!popup || !popupSurface) {
-          throw new Error("expected the open sidebar hovercard shadow parts");
-        }
-        const [originX, originY] = getComputedStyle(popupSurface)
-          .transformOrigin.split(" ")
-          .map(Number.parseFloat);
-        return {
-          animationDuration: getComputedStyle(popupSurface).animationDuration,
-          popupHeight: popupSurface.offsetHeight,
-          popupWidth: popupSurface.offsetWidth,
-          originX,
-          originY,
-          placement: popup.getAttribute("data-current-placement"),
-        };
-      });
     await page.clock.resume();
+    const hoverCard = sidebar.locator("openclaw-sidebar-build-chip openclaw-tooltip");
+    await hoverCard
+      .locator('wa-tooltip[open] wa-popup[data-current-placement] [part~="popup"]')
+      .waitFor({ state: "visible" });
+    const hoverCardMotion = await hoverCard.evaluate((tooltip) => {
+      const webAwesomeTooltip = tooltip.shadowRoot?.querySelector("wa-tooltip");
+      const popup = webAwesomeTooltip?.shadowRoot?.querySelector("wa-popup");
+      const popupSurface = popup?.shadowRoot?.querySelector<HTMLElement>('[part~="popup"]');
+      if (!popup || !popupSurface) {
+        throw new Error("expected the open sidebar hovercard shadow parts");
+      }
+      const [originX, originY] = getComputedStyle(popupSurface)
+        .transformOrigin.split(" ")
+        .map(Number.parseFloat);
+      return {
+        animationDuration: getComputedStyle(popupSurface).animationDuration,
+        popupHeight: popupSurface.offsetHeight,
+        popupWidth: popupSurface.offsetWidth,
+        originX,
+        originY,
+        placement: popup.getAttribute("data-current-placement"),
+      };
+    });
     await page.keyboard.press("Escape");
 
     await page.setViewportSize({ width: 900, height: 900 });
