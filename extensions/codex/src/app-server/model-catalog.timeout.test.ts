@@ -37,11 +37,15 @@ const model = {
 };
 
 describe("Codex catalog refresh deadline", () => {
+  let modelRequestStarted: ReturnType<typeof Promise.withResolvers<void>>;
+
   beforeEach(() => {
     vi.useFakeTimers();
+    modelRequestStarted = Promise.withResolvers<void>();
     transport.release.mockClear();
     transport.request.mockReset().mockImplementation(async (method: string) => {
       if (method === "model/list") {
+        modelRequestStarted.resolve();
         // Codex bounds its remote refresh at five seconds before returning its
         // own identity-scoped cached or bundled catalog. Include response transit.
         await new Promise((resolve) => {
@@ -67,7 +71,7 @@ describe("Codex catalog refresh deadline", () => {
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
-    await vi.waitFor(() => expect(transport.request).toHaveBeenCalled());
+    await modelRequestStarted.promise;
     await vi.advanceTimersByTimeAsync(5_100);
     expect(await settled).toEqual({
       value: [expect.objectContaining({ id: model.id, nativeRuntime: "codex" })],
@@ -88,7 +92,7 @@ describe("Codex catalog refresh deadline", () => {
       (value) => ({ value }),
       (error: unknown) => ({ error }),
     );
-    await vi.waitFor(() => expect(transport.request).toHaveBeenCalled());
+    await modelRequestStarted.promise;
     await vi.advanceTimersByTimeAsync(5_100);
     expect(await settled).toMatchObject({ value: { models: [{ id: model.id }] } });
     expect(transport.release).toHaveBeenCalledOnce();
@@ -99,7 +103,7 @@ describe("Codex catalog refresh deadline", () => {
     const configured = { ...pluginConfig, discovery: { timeoutMs: 750 } };
     const pending = owner.load(params, configured);
     const rejected = expect(pending).rejects.toThrow(/timed out/);
-    await vi.waitFor(() => expect(transport.request).toHaveBeenCalled());
+    await modelRequestStarted.promise;
     await vi.advanceTimersByTimeAsync(750);
     await rejected;
     await vi.advanceTimersByTimeAsync(5_100);
