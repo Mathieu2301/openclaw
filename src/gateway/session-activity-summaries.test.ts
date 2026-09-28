@@ -49,7 +49,7 @@ import {
 } from "./session-activity-summaries.js";
 import { projectSessionActivitySummary } from "./session-activity-summary-state.js";
 import { listSessionFixture } from "./session-list.test-support.js";
-import type { defaultCompleteModel } from "./session-observer-model.js";
+import type { defaultCompleteModel, defaultPrepareModel } from "./session-observer-model.js";
 import { bindSessionRowProjection } from "./session-row-projection-access.js";
 import { createSessionRowProjection } from "./session-row-projection.js";
 
@@ -132,6 +132,15 @@ describe("Activity recap lifecycle with the canonical session store", () => {
   const changed = vi.fn();
   const read = () => loadSessionEntryReadOnly(scope);
   const view = () => projectSessionActivitySummary({ ...target, cfg, entry: read() });
+  const createService = (prepareModel: typeof defaultPrepareModel = prepare) =>
+    createSessionActivitySummaries({
+      scheduler: createTestGatewayScheduler(),
+      getConfig: () => cfg,
+      getSessionRowProjection: () => residentProjection,
+      onChanged: changed,
+      prepareModel,
+      completeModel: complete,
+    });
 
   beforeEach(async () => {
     testState = await createOpenClawTestState({ scenario: "minimal" });
@@ -144,14 +153,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
       lifecycleRevision: "lifecycle-1",
       updatedAt: 1,
     });
-    service = createSessionActivitySummaries({
-      scheduler: createTestGatewayScheduler(),
-      getConfig: () => cfg,
-      getSessionRowProjection: () => residentProjection,
-      onChanged: changed,
-      prepareModel: prepare,
-      completeModel: complete,
-    });
+    service = createService();
   });
   afterEach(async () => {
     archiveMaterializationHook.beforeMaterialize = undefined;
@@ -260,13 +262,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     });
     expect(read()?.updatedAt).toBe(originalActivity);
     await service.dispose();
-    service = createSessionActivitySummaries({
-      scheduler: createTestGatewayScheduler(),
-      getConfig: () => cfg,
-      onChanged: changed,
-      prepareModel: prepare,
-      completeModel: complete,
-    });
+    service = createService();
     service.ensure(target);
     await vi.waitFor(() => expect(view()?.state).toBe("current"));
     expect(complete).toHaveBeenCalledTimes(3);
@@ -631,13 +627,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     expect(view()?.state).toBe("stale");
     // Offline edits rebuild asynchronously; finish the fixture before restarting its observer.
     await waitForSessionTranscriptProjection(scope);
-    service = createSessionActivitySummaries({
-      scheduler: createTestGatewayScheduler(),
-      getConfig: () => cfg,
-      onChanged: changed,
-      prepareModel: prepare,
-      completeModel: complete,
-    });
+    service = createService();
     service.ensure(target);
     await vi.waitFor(() => expect(view()?.state).toBe("current"));
     expect(complete).toHaveBeenCalledTimes(2);
@@ -723,13 +713,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     service.ensure(target);
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
     const oldService = service;
-    service = createSessionActivitySummaries({
-      scheduler: createTestGatewayScheduler(),
-      getConfig: () => cfg,
-      onChanged: changed,
-      prepareModel: async () => prepared,
-      completeModel: complete,
-    });
+    service = createService(async () => prepared);
     service.ensure(target);
     const oldDisposal = oldService.dispose();
     expect(view()?.state).toBe("updating");
