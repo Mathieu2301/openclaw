@@ -3079,6 +3079,7 @@ jobs:
           BROWSER_PROOF_REPORT
 
       - name: Run built artifact checks
+        id: built_artifact_checks
         env:
           PARALLEL_GATEWAY_WATCH: ${{ runner.environment != 'github-hosted' && 'true' || 'false' }}
           PARALLEL_BUILT_VERIFIERS: ${{ runner.environment != 'github-hosted' && 'true' || 'false' }}
@@ -3316,7 +3317,9 @@ jobs:
           exit "$failures"
 
       - name: Upload Discord component attachment proof
-        if: always() && needs.preflight.outputs.run_discord_component_proof == 'true'
+        if: >-
+          always() && needs.preflight.outputs.run_discord_component_proof == 'true' &&
+          (steps.built_artifact_checks.outcome == 'success' || steps.built_artifact_checks.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: discord-component-attachments
