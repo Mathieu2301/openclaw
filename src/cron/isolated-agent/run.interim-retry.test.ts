@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { onInternalDiagnosticEvent } from "../../infra/diagnostic-events.js";
+import { createDeferredCore } from "../../shared/deferred.js";
 import { makeIsolatedAgentJobFixture, makeIsolatedAgentParamsFixture } from "./job-fixtures.js";
 import { setupRunCronIsolatedAgentTurnSuite } from "./run.suite-helpers.js";
 import {
-  countActiveDescendantRunsMock,
   deriveSessionTotalTokensMock,
   dispatchCronDeliveryMock,
-  listDescendantRunsForRequesterMock,
   loadRunCronIsolatedAgentTurn,
   makeCronSession,
   mockRunCronFallbackPassthrough,
   pickLastNonEmptyTextFromPayloadsMock,
+  readDescendantExecutionStateMock,
   resolveCronDeliveryPlanMock,
   resolveCronPayloadOutcomeMock,
   resolveCronSessionMock,
@@ -43,11 +43,13 @@ function requireEmbeddedAgentCall(index: number): {
 }
 
 function requireDeliveryRequest(): {
+  runStartedAt: number;
   skipDelivery?: string;
   deliveryPayloads?: unknown;
 } {
   const request = dispatchCronDeliveryMock.mock.calls[0]?.[0] as
     | {
+        runStartedAt: number;
         skipDelivery?: string;
         deliveryPayloads?: unknown;
       }
@@ -421,20 +423,52 @@ describe("runCronIsolatedAgentTurn — interim ack retry", () => {
       payloads: [{ text: "On it, I spawned a subagent and it will auto-announce when done." }],
       meta: { agentMeta: { usage: { input: 10, output: 20 } } },
     });
-    listDescendantRunsForRequesterMock.mockReturnValue([
-      {
-        execution: { status: "running", startedAt: Date.now() + 60_000 },
-      },
-    ]);
-    countActiveDescendantRunsMock.mockReturnValue(0);
+    readDescendantExecutionStateMock.mockResolvedValue({
+      hasFreshDescendants: true,
+      hasActiveDescendants: false,
+    });
 
     mockRunCronFallbackPassthrough();
     await runTurnAndExpectOk(1, 1);
-    expect(listDescendantRunsForRequesterMock).toHaveBeenCalledWith(
+    const { runStartedAt } = requireDeliveryRequest();
+    expect(runStartedAt).toEqual(expect.any(Number));
+    expect(readDescendantExecutionStateMock).toHaveBeenCalledWith(
       "agent:default:cron:test:run:test-session-id",
+      runStartedAt,
     );
-    expect(countActiveDescendantRunsMock).toHaveBeenCalledWith(
-      "agent:default:cron:test:run:test-session-id",
+  });
+
+  it("does not restart a prompt after cancellation during descendant observation", async () => {
+    usePayloadTextExtraction();
+    runEmbeddedAgentMock.mockResolvedValueOnce({
+      payloads: [{ text: "On it, gathering the results." }],
+      meta: { agentMeta: { usage: { input: 10, output: 20 } } },
+    });
+    const entered = createDeferredCore();
+    const release = createDeferredCore();
+    readDescendantExecutionStateMock.mockImplementation(async () => {
+      entered.resolve();
+      await release.promise;
+      return { hasFreshDescendants: false, hasActiveDescendants: false };
+    });
+    const controller = new AbortController();
+    mockRunCronFallbackPassthrough();
+    const pending = runCronIsolatedAgentTurn(
+      makeIsolatedAgentParamsFixture({ abortSignal: controller.signal }),
     );
+    void pending.catch(() => {});
+    try {
+      expect(
+        await Promise.race([entered.promise.then(() => "reading"), pending.then(() => "done")]),
+      ).toBe("reading");
+      controller.abort(new Error("Cron observation canceled"));
+      release.resolve();
+      expect(await pending).toMatchObject({ status: "error" });
+      expect(runEmbeddedAgentMock).toHaveBeenCalledTimes(1);
+      expect(runWithModelFallbackMock).toHaveBeenCalledTimes(1);
+    } finally {
+      release.resolve();
+      await pending.catch(() => {});
+    }
   });
 });
