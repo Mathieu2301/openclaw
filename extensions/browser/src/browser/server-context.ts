@@ -16,7 +16,10 @@ import {
   BrowserTabNotFoundError,
   toBrowserErrorResponse,
 } from "./errors.js";
-import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
+import {
+  getBrowserProfileCapabilities,
+  isExternallyManagedCdpProfile,
+} from "./profile-capabilities.js";
 import { refreshResolvedBrowserConfigFromDisk } from "./resolved-config-refresh.js";
 import { createProfileAvailability } from "./server-context.availability.js";
 import {
@@ -97,6 +100,7 @@ function createProfileContext(
   };
 
   const configRevision = getProfileLifecycle(profileState).configRevision;
+  const externallyManagedCdp = isExternallyManagedCdpProfile(profile);
 
   const rawTabOps = createProfileTabOps({
     profile,
@@ -154,11 +158,11 @@ function createProfileContext(
       return await withLease(options?.signal, async (signal) => {
         // Explicit targets can come from history; lookup must not launch or restart a browser.
         // A stopped managed browser must retain its historical-target error contract.
-        // Remote CDP instead resolves first: a short health probe can time out while
+        // Externally managed CDP resolves first: a short health probe can time out while
         // tab enumeration still succeeds.
         if (
           targetId !== undefined &&
-          !getBrowserProfileCapabilities(profile).isRemote &&
+          !externallyManagedCdp &&
           !(await rawAvailability.isReachable(undefined, { signal }))
         ) {
           throw new BrowserProfileUnavailableError(

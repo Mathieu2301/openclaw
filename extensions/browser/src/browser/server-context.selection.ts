@@ -11,7 +11,10 @@ import { appendCdpPath } from "./cdp.js";
 import { getChromeMcpModule } from "./chrome-mcp.runtime.js";
 import type { ResolvedBrowserProfile } from "./config.js";
 import { BrowserTabNotFoundError } from "./errors.js";
-import { getBrowserProfileCapabilities } from "./profile-capabilities.js";
+import {
+  getBrowserProfileCapabilities,
+  isExternallyManagedCdpProfile,
+} from "./profile-capabilities.js";
 import { getPwAiModule } from "./pw-ai-module.js";
 import {
   OPEN_TAB_DISCOVERY_POLL_MS,
@@ -72,6 +75,7 @@ export function createProfileSelectionOps({
 }: SelectionDeps): SelectionOps {
   const cdpHttpBase = normalizeCdpHttpBaseForJsonEndpoints(profile.cdpUrl);
   const capabilities = getBrowserProfileCapabilities(profile);
+  const externallyManagedCdp = isExternallyManagedCdpProfile(profile);
 
   const ensureTabAvailable = async (
     targetId?: string,
@@ -130,7 +134,7 @@ export function createProfileSelectionOps({
     // recovery read. Slow healthy enumeration can still succeed, while an
     // unavailable connection consumes at most one full action timeout.
     const firstListOptions =
-      capabilities.isRemote && targetId !== undefined
+      externallyManagedCdp && targetId !== undefined
         ? {
             ...options,
             timeoutMs: Math.min(options?.timeoutMs ?? Infinity, CDP_WS_HANDSHAKE_TIMEOUT_MS),
