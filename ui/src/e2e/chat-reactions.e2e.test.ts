@@ -57,9 +57,15 @@ async function expectCompactPicker(picker: Locator) {
     const box = element.getBoundingClientRect();
     const choices = element.querySelector(".chat-reaction-picker")!.getBoundingClientRect();
     const search = element.querySelector("input")!.getBoundingClientRect();
+    const trigger = element
+      .closest("openclaw-chat-message-reactions")!
+      .querySelector(".chat-reaction-add")!
+      .getBoundingClientRect();
     return {
       width: box.width,
       height: box.height,
+      center: (box.left + box.right) / 2,
+      triggerCenter: (trigger.left + trigger.right) / 2,
       left: box.left,
       right: box.right,
       viewport: window.innerWidth,
@@ -70,8 +76,9 @@ async function expectCompactPicker(picker: Locator) {
       editing: element.ownerDocument.activeElement instanceof HTMLInputElement,
     };
   });
-  expect(geometry.width).toBeLessThanOrEqual(280);
-  expect(geometry.height).toBeLessThanOrEqual(260);
+  expect(geometry.width).toBeLessThanOrEqual(210);
+  expect(Math.abs(geometry.center - geometry.triggerCenter)).toBeLessThanOrEqual(1);
+  expect(geometry.height).toBeLessThanOrEqual(160);
   expect(geometry.left).toBeGreaterThanOrEqual(8);
   expect(geometry.right).toBeLessThanOrEqual(geometry.viewport - 8);
   expect(geometry.searchTop).toBeGreaterThanOrEqual(geometry.choicesBottom);

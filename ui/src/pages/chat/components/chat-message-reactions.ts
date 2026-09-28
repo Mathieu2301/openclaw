@@ -193,7 +193,7 @@ export class ChatMessageReactions extends OpenClawLightDomElement {
     const popup = this.querySelector<WaPopup>("wa-popup");
     const trigger = this.querySelector<HTMLButtonElement>(".chat-reaction-add");
     if (popup && trigger && this.pickerOpen) {
-      configureAnchoredPopup(popup, trigger, "top");
+      configureAnchoredPopup(popup, trigger, "top", "center");
     }
   }
 

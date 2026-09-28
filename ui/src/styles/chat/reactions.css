@@ -178,12 +178,12 @@ openclaw-chat-message-reactions {
 
 .chat-reaction-popover {
   box-sizing: border-box;
-  width: min(264px, calc(100vw - 24px));
+  width: min(208px, calc(100vw - 24px));
   max-height: min(320px, var(--auto-size-available-height, calc(100dvh - 24px)));
   overflow: auto;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--overlay-border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: var(--bg-elevated);
   box-shadow: var(--overlay-shadow);
   color: var(--text);
@@ -198,9 +198,9 @@ openclaw-chat-message-reactions {
 .chat-reaction-search {
   box-sizing: border-box;
   width: 100%;
-  min-height: 36px;
-  margin-top: 8px;
-  padding: 8px 10px;
+  min-height: 30px;
+  margin-top: 6px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
@@ -216,12 +216,12 @@ openclaw-chat-message-reactions {
 }
 
 .chat-reaction-picker button {
-  min-height: 44px;
+  min-height: 32px;
   padding: 4px;
   border: 0;
   border-radius: 8px;
   background: transparent;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1;
 }
 
@@ -257,6 +257,10 @@ openclaw-chat-message-reactions {
 }
 
 @media (pointer: coarse) {
+  .chat-reaction-picker button {
+    min-height: 44px;
+  }
+
   .chat-reaction-chip,
   .chat-reaction-add,
   .chat-reaction-toggle,
