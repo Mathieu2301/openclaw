@@ -12,6 +12,7 @@ import ai.openclaw.app.defaultSidebarPageOrder
 import ai.openclaw.app.defaultSidebarVisiblePages
 import ai.openclaw.app.i18n.nativeString
 import ai.openclaw.app.i18n.resolveNativeText
+import ai.openclaw.app.operatorScopesAllowAdmin
 import ai.openclaw.app.operatorScopesAllowWrite
 import ai.openclaw.app.sanitizeSidebarPageOrder
 import ai.openclaw.app.ui.design.ClawColors
@@ -273,7 +274,7 @@ internal fun sidebarCatalogSections(
 ): List<SidebarCatalogSection> =
   catalogs
     .filter { catalog ->
-      catalog.canCreateSession ||
+      catalog.canStartTerminal ||
         catalog.errorText != null ||
         catalog.hosts.any { host ->
           host.errorText != null || host.nextCursor != null || host.sessions.any { !it.archived }
@@ -287,8 +288,8 @@ internal fun sidebarCatalogSections(
 
 internal fun sidebarCatalogSessionCreationEnabled(
   catalog: SessionCatalog,
-  canMutateSessions: Boolean,
-): Boolean = catalog.canCreateSession && canMutateSessions
+  canStartTerminal: Boolean,
+): Boolean = catalog.canStartTerminal && canStartTerminal
 
 internal fun toggleSidebarCatalogExpansion(
   expandedCatalogIds: List<String>,
@@ -449,6 +450,7 @@ internal fun OpenClawSidebar(
   val catalogAvailable by viewModel.sessionCatalogAvailable.collectAsState()
   val operatorScopes by viewModel.operatorScopes.collectAsState()
   val canMutateSessions = operatorScopesAllowWrite(operatorScopes)
+  val canStartTerminal = connection.isConnected && operatorScopesAllowAdmin(operatorScopes)
   val liveSessionsByKey = remember(sessions) { sessions.associateBy(ChatSessionEntry::key) }
   val pageOrder by viewModel.sidebarPageOrder.collectAsState()
   val visiblePageIds by viewModel.sidebarVisiblePages.collectAsState()
@@ -812,7 +814,7 @@ internal fun OpenClawSidebar(
                       },
                       trailingContent =
                         if (
-                          sidebarCatalogSessionCreationEnabled(catalog, canMutateSessions) &&
+                          sidebarCatalogSessionCreationEnabled(catalog, canStartTerminal) &&
                           catalogState.continuingEntryId == null
                         ) {
                           {
@@ -823,7 +825,7 @@ internal fun OpenClawSidebar(
                             ) {
                               Icon(
                                 imageVector = Icons.Default.Add,
-                                contentDescription = nativeString("New session"),
+                                contentDescription = "${nativeString("New session")} — ${catalog.label}",
                                 tint = palette.text,
                                 modifier = Modifier.size(18.dp),
                               )

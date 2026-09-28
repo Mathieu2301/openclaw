@@ -10,6 +10,7 @@ import ai.openclaw.app.NodeRuntime
 import ai.openclaw.app.NodeRuntimeMode
 import ai.openclaw.app.PermissionRequester
 import ai.openclaw.app.SecurePrefs
+import ai.openclaw.app.SessionCatalogState
 import ai.openclaw.app.bindNodeRuntimeTestFixture
 import ai.openclaw.app.chat.ChatController
 import ai.openclaw.app.closeNodeRuntimeTestFixture
@@ -18,6 +19,7 @@ import ai.openclaw.app.gateway.GatewayEndpoint
 import ai.openclaw.app.gateway.GatewayRegistryEntry
 import ai.openclaw.app.gateway.GatewayRegistryEntryKind
 import ai.openclaw.app.gateway.GatewaySession
+import ai.openclaw.app.parseSessionCatalogs
 import ai.openclaw.app.ui.chat.ChatScreen
 import ai.openclaw.app.ui.chat.PendingAttachment
 import ai.openclaw.app.ui.design.ClawDesignTheme
@@ -31,7 +33,9 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.provider.Settings
+import android.view.ViewGroup
 import android.view.inspector.WindowInspector
+import android.webkit.WebView
 import androidx.activity.ComponentDialog
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -87,6 +91,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.descendants
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -98,6 +103,7 @@ import androidx.window.layout.WindowInfoTrackerDecorator
 import androidx.window.layout.WindowLayoutInfo
 import com.google.mlkit.common.sdkinternal.MlKitContext
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -179,6 +185,40 @@ class SidebarGatewayPickerTest {
     Settings.Global.putString(app.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, animatorScale)
     AndroidScreenshotFixture.configure(AndroidScreenshotScene.Home)
     WindowInfoTracker.reset()
+  }
+
+  @Test
+  @Config(sdk = [31], qualifiers = "w412dp-h820dp-mdpi")
+  fun nativeCatalogPlusOpensGatewaySetupInsteadOfCreatingChat() {
+    model.enterScreenshotFixtureMode(AndroidScreenshotScene.CompletedWork)
+    val catalogs =
+      parseSessionCatalogs(
+        """{"catalogs":[{"id":"codex","label":"Codex","capabilities":{"startTerminal":true},"hosts":[{"hostId":"gateway:local","label":"Gateway","kind":"gateway","connected":true,"canStartTerminal":true,"sessions":[{"threadId":"example","name":"Existing Codex session","status":"idle","canContinue":true}]}]}]}""",
+        requestedAgentId = "main",
+      )
+    ReflectionHelpers.getField<MutableStateFlow<SessionCatalogState>>(runtime, "_sessionCatalogState").value =
+      SessionCatalogState(catalogs = catalogs, agentId = "main")
+    ReflectionHelpers.getField<MutableStateFlow<Boolean>>(runtime, "_sessionCatalogAvailable").value = true
+    val originalSession = model.chatSessionKey.value
+    showSidebarAndComposer(dark = false, showShell = true)
+    composeRule.onNodeWithContentDescription("Show Sidebar").performClick()
+    composeRule.onNodeWithText("Codex").performScrollTo().assertIsDisplayed()
+    capture("catalog-plus")
+    composeRule.onNodeWithContentDescription("New session — Codex").assertIsEnabled().performClick()
+    composeRule.onNodeWithText("Terminal").assertIsDisplayed()
+    composeRule.runOnIdle {
+      val webView =
+        WindowInspector
+          .getGlobalWindowViews()
+          .filterIsInstance<ViewGroup>()
+          .asSequence()
+          .flatMap { it.descendants }
+          .filterIsInstance<WebView>()
+          .single()
+      assertEquals("${AndroidScreenshotFixture.controlUiBaseUrl}/new?agent=main&catalog=codex", shadowOf(webView).lastLoadedUrl)
+      assertEquals(originalSession, model.chatSessionKey.value)
+      assertFalse(model.chatSessionCreating.value)
+    }
   }
 
   @Test

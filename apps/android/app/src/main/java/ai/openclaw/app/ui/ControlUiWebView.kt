@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -126,6 +127,7 @@ internal fun ControlUiWebView(
   val focusManager = LocalFocusManager.current
   val darkAppearance = LocalResolvedAppearanceIsDark.current
   var rendererGeneration by remember { mutableIntStateOf(0) }
+  var currentUrl by remember(page, url) { mutableStateOf(url) }
   val currentExternalLink by rememberUpdatedState(onExternalLink)
 
   // A WebView reads prefers-color-scheme from the Context it was built with, so an appearance
@@ -170,9 +172,10 @@ internal fun ControlUiWebView(
             navigationUrl = url.takeIf { onExternalLink != null },
             onExternalLink = { currentExternalLink?.invoke(it) },
             onRendererGone = { rendererGeneration += 1 },
+            onUrlChanged = { currentUrl = it },
           )
         installControlUiAuthScript(webView, page)
-        webView.loadUrl(url)
+        webView.loadUrl(currentUrl)
         webView
       },
       update = { webView ->
@@ -266,8 +269,20 @@ private class ControlUiWebViewClient(
   private val navigationUrl: String? = null,
   private val onExternalLink: (String) -> Unit = {},
   private val onRendererGone: () -> Unit,
+  private val onUrlChanged: (String) -> Unit = {},
 ) : WebViewClient() {
   private var released = false
+
+  override fun doUpdateVisitedHistory(
+    view: WebView,
+    url: String?,
+    isReload: Boolean,
+  ) {
+    super.doUpdateVisitedHistory(view, url, isReload)
+    if (released || url == null || (navigationUrl != null && url != navigationUrl)) return
+    val origin = controlUiOriginRule(page.baseUrl) ?: return
+    if (controlUiOriginRule(url) == origin) onUrlChanged(url)
+  }
 
   override fun shouldOverrideUrlLoading(
     view: WebView,

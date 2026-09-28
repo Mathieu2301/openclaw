@@ -217,7 +217,7 @@ class SidebarCatalogGroupingTest {
   fun catalogSectionsMatchWebVisibilityAndKeepExpansionIndependent() {
     val catalogs =
       listOf(
-        SessionCatalog(id = "codex", label = "Codex", hosts = emptyList(), canCreateSession = true),
+        SessionCatalog(id = "codex", label = "Codex", hosts = emptyList(), canStartTerminal = true),
         SessionCatalog(
           id = "claude",
           label = "Claude Code",
@@ -257,13 +257,13 @@ class SidebarCatalogGroupingTest {
   }
 
   @Test
-  fun catalogCreationRequiresAdvertisedCapabilityAndWriteScope() {
-    val creatable = SessionCatalog(id = "codex", label = "Codex", hosts = emptyList(), canCreateSession = true)
-    val unavailable = creatable.copy(canCreateSession = false)
+  fun catalogCreationRequiresAdvertisedCapabilityAndTerminalAccess() {
+    val creatable = SessionCatalog(id = "codex", label = "Codex", hosts = emptyList(), canStartTerminal = true)
+    val unavailable = creatable.copy(canStartTerminal = false)
 
-    assertTrue(sidebarCatalogSessionCreationEnabled(creatable, canMutateSessions = true))
-    assertFalse(sidebarCatalogSessionCreationEnabled(creatable, canMutateSessions = false))
-    assertFalse(sidebarCatalogSessionCreationEnabled(unavailable, canMutateSessions = true))
+    assertTrue(sidebarCatalogSessionCreationEnabled(creatable, canStartTerminal = true))
+    assertFalse(sidebarCatalogSessionCreationEnabled(creatable, canStartTerminal = false))
+    assertFalse(sidebarCatalogSessionCreationEnabled(unavailable, canStartTerminal = true))
   }
 
   @Test

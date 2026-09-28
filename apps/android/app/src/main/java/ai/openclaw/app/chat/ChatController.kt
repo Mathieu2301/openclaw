@@ -2365,7 +2365,6 @@ class ChatController internal constructor(
   /** Starts a fresh chat and returns whether the gateway created the session. */
   suspend fun startNewChatAwait(
     worktree: Boolean = false,
-    catalogId: String? = null,
   ): Boolean {
     val createContext = currentCoroutineContext()
     createContext.ensureActive()
@@ -2408,7 +2407,6 @@ class ChatController internal constructor(
       if (lease == null) apply() else lease.commitIfCurrent(::apply)
       return result
     }
-    val normalizedCatalogId = catalogId?.trim()?.takeIf(String::isNotEmpty)
     return try {
       applyIfCurrent {
         createContext.ensureActive()
@@ -2425,16 +2423,12 @@ class ChatController internal constructor(
       val params =
         buildJsonObject {
           put("agentId", JsonPrimitive(ownerAgentId))
-          if (normalizedCatalogId != null) {
-            put("catalogId", JsonPrimitive(normalizedCatalogId))
-          } else {
-            if (inheritParent) {
-              put("parentSessionKey", JsonPrimitive(parentKey))
-              put("emitCommandHooks", JsonPrimitive(true))
-              put("succeedsParent", JsonPrimitive(false))
-            }
-            if (worktree) put("worktree", JsonPrimitive(true))
+          if (inheritParent) {
+            put("parentSessionKey", JsonPrimitive(parentKey))
+            put("emitCommandHooks", JsonPrimitive(true))
+            put("succeedsParent", JsonPrimitive(false))
           }
+          if (worktree) put("worktree", JsonPrimitive(true))
         }
       val res = requestSessionCreate(createGatewayScope, params, lease)
       val createdKey = parseCreatedSessionKey(json, res) ?: parentKey

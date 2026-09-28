@@ -24,7 +24,7 @@ data class SessionCatalog(
   val id: String,
   val label: String,
   val hosts: List<SessionCatalogHost>,
-  val canCreateSession: Boolean = false,
+  val canStartTerminal: Boolean = false,
   val errorText: String? = null,
 )
 
@@ -316,7 +316,7 @@ private fun parseSessionCatalog(
           requestedAgentId = requestedAgentId,
         )
       },
-    canCreateSession = (catalog["capabilities"] as? JsonObject)?.get("createSession") is JsonObject,
+    canStartTerminal = (catalog["capabilities"] as? JsonObject)?.boolean("startTerminal") == true,
     errorText = catalog.errorMessage(),
   )
 }

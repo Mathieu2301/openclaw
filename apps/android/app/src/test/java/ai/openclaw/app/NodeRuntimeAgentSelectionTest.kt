@@ -742,25 +742,16 @@ class NodeRuntimeAgentSelectionTest {
   fun currentSessionSelectionWinsAfterCatalogContinuationValidation() = assertCurrentSessionSelectionWinsAtPublication(catalogContinuation = true)
 
   @Test
-  fun newSessionWinsWhenAgentLookupReturnsBeforeCreation() = assertNewSessionWinsOverAgentLookup(catalogId = null, lookupBeforeCreation = true)
+  fun newSessionWinsWhenAgentLookupReturnsBeforeCreation() = assertNewSessionWinsOverAgentLookup(lookupBeforeCreation = true)
 
   @Test
-  fun newSessionWinsWhenAgentLookupReturnsAfterCreation() = assertNewSessionWinsOverAgentLookup(catalogId = null, lookupBeforeCreation = false)
+  fun newSessionWinsWhenAgentLookupReturnsAfterCreation() = assertNewSessionWinsOverAgentLookup(lookupBeforeCreation = false)
 
   @Test
-  fun newCatalogSessionWinsWhenAgentLookupReturnsBeforeCreation() = assertNewSessionWinsOverAgentLookup(catalogId = "codex", lookupBeforeCreation = true)
+  fun agentSelectionRestoresNewChatAfterSwitchingAway() = assertAgentSelectionRestoresCreatedSession()
 
   @Test
-  fun newCatalogSessionWinsWhenAgentLookupReturnsAfterCreation() = assertNewSessionWinsOverAgentLookup(catalogId = "codex", lookupBeforeCreation = false)
-
-  @Test
-  fun agentSelectionRestoresNewChatAfterSwitchingAway() = assertAgentSelectionRestoresCreatedSession(catalogId = null)
-
-  @Test
-  fun agentSelectionRestoresNewCatalogChatAfterSwitchingAway() = assertAgentSelectionRestoresCreatedSession(catalogId = "codex")
-
-  @Test
-  fun agentSelectionRestoresNewChatWhileItsInitialHistoryIsPending() = assertAgentSelectionRestoresCreatedSession(catalogId = null, holdCreatedHistory = true)
+  fun agentSelectionRestoresNewChatWhileItsInitialHistoryIsPending() = assertAgentSelectionRestoresCreatedSession(holdCreatedHistory = true)
 
   @Test
   fun pendingCatalogContinuationRetiresLateAgentSessionLookup() =
@@ -1305,7 +1296,6 @@ class NodeRuntimeAgentSelectionTest {
     }
 
   private fun assertNewSessionWinsOverAgentLookup(
-    catalogId: String?,
     lookupBeforeCreation: Boolean,
   ): Unit =
     runBlocking {
@@ -1366,13 +1356,7 @@ class NodeRuntimeAgentSelectionTest {
           runtime.chat.sessionId.first { it != null }
           runtime.chat.historyLoading.first { !it }
         }
-        val catalogCreation =
-          if (catalogId == null) {
-            runtime.startNewChat()
-            null
-          } else {
-            async { runtime.createSessionCatalogEntry(catalogId) }
-          }
+        runtime.startNewChat()
         val createJob = withTimeout(5_000) { createStarted.await() }
 
         if (lookupBeforeCreation) {
@@ -1389,7 +1373,6 @@ class NodeRuntimeAgentSelectionTest {
         }
 
         assertEquals(createdKey, runtime.chat.sessionKey.value)
-        catalogCreation?.let { assertTrue(it.await()) }
       } finally {
         releaseLookup.complete(Unit)
         releaseCreate.complete(Unit)
@@ -1398,7 +1381,6 @@ class NodeRuntimeAgentSelectionTest {
     }
 
   private fun assertAgentSelectionRestoresCreatedSession(
-    catalogId: String?,
     holdCreatedHistory: Boolean = false,
   ) = runBlocking {
     val runtime = createConnectedRuntime()
@@ -1473,20 +1455,13 @@ class NodeRuntimeAgentSelectionTest {
       }
       assertEquals(previousKey, runtime.chat.sessionKey.value)
 
-      val catalogCreation =
-        if (catalogId == null) {
-          runtime.startNewChat()
-          null
-        } else {
-          async { runtime.createSessionCatalogEntry(catalogId) }
-        }
+      runtime.startNewChat()
       val createJob = withTimeout(5_000) { createStarted.await() }
       if (holdCreatedHistory) {
         withTimeout(5_000) { createdHistoryStarted.await() }
         assertFalse("Creation must still be waiting for its initial history", createJob.isCompleted)
       } else {
         withTimeout(5_000) { createJob.join() }
-        catalogCreation?.let { assertTrue(it.await()) }
       }
       assertEquals(createdKey, runtime.chat.sessionKey.value)
 

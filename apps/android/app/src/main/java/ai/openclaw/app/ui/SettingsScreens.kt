@@ -184,6 +184,7 @@ internal fun SettingsDetailScreen(
   viewModel: MainViewModel,
   route: SettingsRoute,
   onBack: () -> Unit,
+  catalogSessionStart: CatalogSessionStart? = null,
 ) {
   when (route) {
     SettingsRoute.Home -> Unit
@@ -200,7 +201,7 @@ internal fun SettingsDetailScreen(
     SettingsRoute.NodesDevices -> NodesDevicesSettingsScreen(viewModel = viewModel, onBack = onBack)
     SettingsRoute.Channels -> ChannelsSettingsScreen(viewModel = viewModel, onBack = onBack)
     SettingsRoute.Dreaming -> DreamingSettingsScreen(viewModel = viewModel, onBack = onBack)
-    SettingsRoute.Terminal -> TerminalSettingsScreen(viewModel = viewModel, onBack = onBack)
+    SettingsRoute.Terminal -> TerminalSettingsScreen(viewModel = viewModel, onBack = onBack, catalogSessionStart = catalogSessionStart)
     SettingsRoute.Desktop -> DesktopScreen(viewModel = viewModel, onBack = onBack)
     SettingsRoute.Notifications -> NotificationSettingsScreen(viewModel = viewModel, onBack = onBack)
     SettingsRoute.PhoneCapabilities -> PhoneCapabilitiesScreen(viewModel = viewModel, onBack = onBack)

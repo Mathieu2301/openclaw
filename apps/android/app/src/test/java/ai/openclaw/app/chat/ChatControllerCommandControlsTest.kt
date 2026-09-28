@@ -351,30 +351,27 @@ class ChatControllerCommandControlsTest {
   @Test
   fun newSessionCreatesRootSessionFromLockedParentForSelectedAgent() =
     runTest {
-      for (catalogId in listOf(null, "codex")) {
-        val (controller, requests) =
-          chatControllerTestSetup {
-            respond("sessions.create", """{"ok":true,"key":"agent:main:dashboard:fresh"}""")
-            respond(
-              "chat.history",
-              """{"sessionId":"locked-session","messages":[],"sessionInfo":{"key":"main","agentId":"main","sessionId":"locked-session","modelSelectionLocked":true,"agentRuntime":{"id":"codex","source":"session"}}}""",
-            )
-            respond("health", "{}")
-            respond("sessions.list", """{"sessions":[]}""")
-          }
-        controller.handleGatewayEvent("health", null)
-        controller.load("main")
-        advanceUntilIdle()
+      val (controller, requests) =
+        chatControllerTestSetup {
+          respond("sessions.create", """{"ok":true,"key":"agent:main:dashboard:fresh"}""")
+          respond(
+            "chat.history",
+            """{"sessionId":"locked-session","messages":[],"sessionInfo":{"key":"main","agentId":"main","sessionId":"locked-session","modelSelectionLocked":true,"agentRuntime":{"id":"codex","source":"session"}}}""",
+          )
+          respond("health", "{}")
+          respond("sessions.list", """{"sessions":[]}""")
+        }
+      controller.handleGatewayEvent("health", null)
+      controller.load("main")
+      advanceUntilIdle()
 
-        assertTrue("New session must work with catalog=$catalogId", controller.startNewChatAwait(catalogId = catalogId))
+      assertTrue(controller.startNewChatAwait())
 
-        val create = json.parseToJsonElement(requests.single { it.first == "sessions.create" }.second.orEmpty()).jsonObject
-        assertEquals(setOfNotNull("agentId", catalogId?.let { "catalogId" }), create.keys)
-        assertEquals(JsonPrimitive("main"), create["agentId"])
-        assertEquals(catalogId?.let(::JsonPrimitive), create["catalogId"])
-        assertEquals("agent:main:dashboard:fresh", controller.sessionKey.value)
-        assertEquals(null, controller.errorText.value)
-      }
+      val create = json.parseToJsonElement(requests.single { it.first == "sessions.create" }.second.orEmpty()).jsonObject
+      assertEquals(setOf("agentId"), create.keys)
+      assertEquals(JsonPrimitive("main"), create["agentId"])
+      assertEquals("agent:main:dashboard:fresh", controller.sessionKey.value)
+      assertEquals(null, controller.errorText.value)
     }
 
   @Test
