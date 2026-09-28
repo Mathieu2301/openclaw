@@ -18,6 +18,9 @@ export type ServiceChildStart = {
   /** Absent only for older Gateway hosts retained by update --no-restart. */
   acknowledgeClosing?: true;
   windowsShellCommand?: string;
+  treeOwnership?: "linux-subreaper";
+  /** Package-owned helper inherited by an admitted portable worker, never a remote command. */
+  nativeProcessOwner?: string;
 } & (
   | { ownedWorker: true; cleanupBinding: NodeWorkerCleanupBinding }
   | { ownedWorker?: never; cleanupBinding?: never }
@@ -42,6 +45,7 @@ export type ServiceChildAnchorPayload =
       type: "ready";
       commandPid: number;
       anchorPid: number;
+      treeOwnership?: "linux-subreaper";
     }
   | {
       type: "root-result";
@@ -64,6 +68,7 @@ export type ServiceChildAnchorPayload =
   | {
       type: "closing";
       reason: "cancel" | "lineage-closed" | "lineage-lost" | "parent-lost";
+      descendantsReaped?: true;
     }
   | {
       type: "startup-error";

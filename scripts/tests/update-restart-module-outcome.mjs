@@ -10,7 +10,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { transformSync } from "esbuild";
 import { z } from "zod";
-import { collectNestedErrorCandidates } from "../../packages/normalization-core/src/error-coercion.ts";
+import {
+  collectNestedErrorCandidates,
+  toErrorObject,
+} from "../../packages/normalization-core/src/error-coercion.ts";
+import { MAX_TIMER_TIMEOUT_MS } from "../../packages/normalization-core/src/number-coercion.ts";
 import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.ts";
 import {
   sliceUtf16Safe,
@@ -239,6 +243,8 @@ async function fixture({
     normalizeControlPlaneUpdateResult: (value) => value,
     isUpdateGatewayReadinessPending: (value) => value.reason === "gateway-readiness-pending",
     collectNestedErrorCandidates,
+    toErrorObject,
+    MAX_TIMER_TIMEOUT_MS,
     sliceUtf16Safe,
     truncateUtf16Safe,
     withCommandProcessScope: async (action) => action(),
@@ -258,6 +264,10 @@ async function fixture({
     Date,
     Error,
     AggregateError,
+    AbortController,
+    performance,
+    setTimeout,
+    clearTimeout,
     console,
   });
   const realNames = [
@@ -268,6 +278,9 @@ async function fixture({
     "update-command-verification",
     "update-command-terminal",
     "update-command-terminal-publication",
+    "../daemon-cli/restart-health-deadline",
+    "../daemon-cli/restart-health-probe",
+    "../../utils/absolute-deadline",
     "update-command-post-update-maintenance",
     // Recovery and reporting stay real; only their I/O uses finite fixture facts.
     "update-command-failure-recovery",

@@ -37,6 +37,7 @@ import type { NodeWorkerProcessIdentity } from "./node-worker-process-identity.j
 type NodeWorkerLaunchDatabase = Pick<
   OpenClawStateDatabase,
   | "node_worker_launch_cleanup"
+  | "node_worker_launch_process_scopes"
   | "node_worker_launch_containers"
   | "node_worker_launches"
   | "node_worker_turns"
@@ -86,6 +87,18 @@ function selectLaunchRows(database: DatabaseSync) {
         .select([
           "node_worker_launch_cleanup.cleanup_mode",
           "node_worker_launch_cleanup.lineage_settled",
+        ]),
+    )
+    .$if(tableExists(database, "node_worker_launch_process_scopes"), (selection) =>
+      selection
+        .leftJoin(
+          "node_worker_launch_process_scopes",
+          "node_worker_launch_process_scopes.launch_id",
+          "node_worker_launches.launch_id",
+        )
+        .select([
+          "node_worker_launch_process_scopes.scope_kind",
+          "node_worker_launch_process_scopes.descendants_reaped",
         ]),
     );
 }
@@ -670,11 +683,27 @@ export class NodeWorkerLaunchKernel {
         ensureNodeWorkerLaunchSchema(database, "node_worker_launch_cleanup");
         executeSqliteQuerySync(
           database,
-          query(database).insertInto("node_worker_launch_cleanup").values({
-            launch_id: params.launchId,
-            cleanup_mode: params.cleanupMode,
-            lineage_settled: null,
-          }),
+          query(database)
+            .insertInto("node_worker_launch_cleanup")
+            .values({
+              launch_id: params.launchId,
+              cleanup_mode:
+                params.cleanupMode === "linux-subreaper" ? "owned-anchor" : params.cleanupMode,
+              lineage_settled: null,
+            }),
+        );
+      }
+      if (params.cleanupMode === "linux-subreaper") {
+        ensureNodeWorkerLaunchSchema(database, "node_worker_launch_process_scopes");
+        executeSqliteQuerySync(
+          database,
+          query(database)
+            .insertInto("node_worker_launch_process_scopes")
+            .values({
+              launch_id: params.launchId,
+              scope_kind: "linux-subreaper",
+              descendants_reaped: null,
+            }),
         );
       }
       const updatedAtMs = Math.max(nowMs, current.created_at_ms, current.updated_at_ms);

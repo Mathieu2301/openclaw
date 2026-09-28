@@ -12,7 +12,7 @@ type NodeWorkerLaunchState =
   | "cancelled";
 export type NodeWorkerTerminalState = Exclude<NodeWorkerLaunchState, "pending" | "running">;
 
-export type NodeWorkerCleanupMode = "process-group" | "owned-anchor";
+export type NodeWorkerCleanupMode = "process-group" | "owned-anchor" | "linux-subreaper";
 
 export type NodeWorkerCleanupBinding = {
   databasePath: string;
@@ -32,6 +32,8 @@ export type NodeWorkerLaunchRow = Selectable<OpenClawStateDatabase["node_worker_
   container_json?: string | null;
   cleanup_mode?: string | null;
   lineage_settled?: number | null;
+  scope_kind?: string | null;
+  descendants_reaped?: number | null;
 };
 
 export type NodeWorkerLaunchReceipt = {
@@ -48,6 +50,7 @@ export type NodeWorkerLaunchReceipt = {
   worker: NodeWorkerProcessIdentity | null;
   workerCleanupMode: NodeWorkerCleanupMode | null;
   workerLineageSettled: boolean;
+  workerDescendantsReaped?: boolean;
   container?: NodeWorkerContainerIdentity;
   resultJson: string | null;
   errorText: string | null;
@@ -112,6 +115,12 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow): NodeWo
   }
   const container = containerIdentity(row.container_json);
   const cleanupMode = row.cleanup_mode ?? null;
+  if (
+    row.scope_kind != null &&
+    (row.scope_kind !== "linux-subreaper" || cleanupMode !== "owned-anchor")
+  ) {
+    throw new Error("invalid node worker process scope");
+  }
   if (cleanupMode !== null && cleanupMode !== "process-group" && cleanupMode !== "owned-anchor") {
     throw new Error("invalid node worker cleanup mode");
   }
@@ -130,7 +139,10 @@ export function nodeWorkerLaunchReceiptFromRow(row: NodeWorkerLaunchRow): NodeWo
       row.worker_pid === null || row.worker_start_time === null
         ? null
         : { pid: row.worker_pid, startTime: row.worker_start_time },
-    workerCleanupMode: cleanupMode,
+    workerCleanupMode: row.scope_kind === "linux-subreaper" ? "linux-subreaper" : cleanupMode,
+    ...(row.scope_kind === "linux-subreaper"
+      ? { workerDescendantsReaped: row.descendants_reaped === 1 }
+      : {}),
     workerLineageSettled: row.lineage_settled === 1,
     ...(container ? { container } : {}),
     resultJson: row.result_json,
