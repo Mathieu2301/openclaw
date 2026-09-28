@@ -479,7 +479,7 @@ async function dispatchInvoke(
     let includeResolvedDefaults = false;
     try {
       if (frame.paramsJSON != null) {
-        const params = decodeParams<unknown>(frame.paramsJSON);
+        const params = decodeParams(frame.paramsJSON);
         if (
           !isRecord(params) ||
           (params.includeResolvedDefaults !== undefined &&
@@ -754,7 +754,7 @@ async function dispatchInvoke(
 }
 
 function decodeMcpToolsCallParams(raw?: string | null): McpToolsCallParams {
-  const value = decodeParams<unknown>(raw);
+  const value = decodeParams(raw);
   if (!isRecord(value)) {
     throw new Error("INVALID_REQUEST: MCP tool params must be an object");
   }

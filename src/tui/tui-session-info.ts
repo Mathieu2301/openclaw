@@ -15,8 +15,8 @@ export type SessionInfoEntry = SessionInfo & {
 };
 
 export function copyDefinedSessionInfo<K extends keyof SessionInfo>(
-  target: SessionInfo,
-  source: SessionInfo | undefined,
+  target: Pick<SessionInfo, K>,
+  source: Pick<SessionInfo, K> | undefined,
   keys: readonly K[],
 ): void {
   for (const key of keys) {
