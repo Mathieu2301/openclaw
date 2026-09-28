@@ -39,6 +39,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -127,14 +128,14 @@ internal fun ControlUiWebView(
   val focusManager = LocalFocusManager.current
   val darkAppearance = LocalResolvedAppearanceIsDark.current
   var rendererGeneration by remember { mutableIntStateOf(0) }
-  var currentUrl by remember(page, url) { mutableStateOf(url) }
+  var currentUrl by rememberSaveable(page.baseUrl, url) { mutableStateOf(url) }
   val currentExternalLink by rememberUpdatedState(onExternalLink)
 
   // A WebView reads prefers-color-scheme from the Context it was built with, so an appearance
   // flip has to rebuild it; keying on the resolved boolean keeps that to real dark/light changes.
   // The reload is safe because both Control UI surfaces reattach to server-side state: the shell
   // outlives the page, and the desktop session lingers on the Gateway long enough to re-observe.
-  key(darkAppearance, rendererGeneration) {
+  key(page, darkAppearance, rendererGeneration) {
     AndroidView(
       modifier = modifier,
       factory = {
@@ -175,7 +176,9 @@ internal fun ControlUiWebView(
             onUrlChanged = { currentUrl = it },
           )
         installControlUiAuthScript(webView, page)
-        webView.loadUrl(currentUrl)
+        val origin = controlUiOriginRule(page.baseUrl)
+        val restoredUrl = currentUrl.takeIf { origin != null && controlUiOriginRule(it) == origin && (onExternalLink == null || it == url) }
+        webView.loadUrl(restoredUrl ?: url)
         webView
       },
       update = { webView ->

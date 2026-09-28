@@ -190,18 +190,26 @@ class SidebarGatewayPickerTest {
 
   @Test
   @Config(sdk = [31], qualifiers = "w412dp-h820dp-mdpi")
-  fun modelOnlyCatalogPlusCreatesChatWithWriteScope() {
+  fun modelOnlyCatalogPlusCreatesChatWithWriteScope() = assertCatalogChatCreation(terminalCapable = false)
+
+  @Test
+  @Config(sdk = [31], qualifiers = "w412dp-h820dp-mdpi")
+  fun dualCapabilityCatalogKeepsChatForWriteOnlyOperators() = assertCatalogChatCreation(terminalCapable = true)
+
+  private fun assertCatalogChatCreation(terminalCapable: Boolean) {
     model.enterScreenshotFixtureMode(AndroidScreenshotScene.CompletedWork)
     val catalogs =
       parseSessionCatalogs(
-        """{"catalogs":[{"id":"model-only","label":"Model chat","capabilities":{"createSession":{"model":"example/chat"}},"hosts":[]}]}""",
+        """{"catalogs":[{"id":"model-only","label":"Model chat","capabilities":{"createSession":{"model":"example/chat"},"startTerminal":$terminalCapable},"hosts":[]}]}""",
         requestedAgentId = "main",
       )
     ReflectionHelpers.getField<MutableStateFlow<SessionCatalogState>>(runtime, "_sessionCatalogState").value =
       SessionCatalogState(catalogs = catalogs, agentId = "main")
     ReflectionHelpers.getField<MutableStateFlow<Boolean>>(runtime, "_sessionCatalogAvailable").value = true
-    ReflectionHelpers.getField<MutableStateFlow<List<String>>>(runtime, "_operatorScopes").value = listOf("operator.read", "operator.write")
-    ReflectionHelpers.getField<MutableStateFlow<NodeRuntime.GatewayControlPage?>>(runtime, "_gatewayControlPage").value = null
+    val scopes = ReflectionHelpers.getField<MutableStateFlow<List<String>>>(runtime, "_operatorScopes")
+    val controlPage = ReflectionHelpers.getField<MutableStateFlow<NodeRuntime.GatewayControlPage?>>(runtime, "_gatewayControlPage")
+    scopes.value = listOf("operator.read", "operator.write") + if (terminalCapable) listOf("operator.admin") else emptyList()
+    if (!terminalCapable) controlPage.value = null
     val requests = mutableListOf<Pair<String, String?>>()
     val request = ReflectionHelpers.getField<suspend (String, String?) -> String>(runtime.chat, "requestGateway")
     val captureLease: (ChatCacheScope?) -> GatewaySession.RequestLease? = { scope ->
@@ -217,9 +225,18 @@ class SidebarGatewayPickerTest {
     drainWithMainLooper { withTimeout(5_000) { model.chatHistoryLoading.first { !it } } }
     composeRule.runOnIdle { assertEquals(0, model.pendingRunCount.value) }
     composeRule.onNodeWithContentDescription("Show Sidebar").performClick()
-    capture("model-catalog-plus")
+    capture(if (terminalCapable) "dual-catalog-actions" else "model-catalog-plus")
+    if (terminalCapable) {
+      composeRule.onNodeWithContentDescription("New session — Model chat").assertIsEnabled()
+      composeRule.onNodeWithContentDescription("New chat — Model chat").assertIsEnabled()
+      composeRule.runOnIdle {
+        scopes.value = listOf("operator.read", "operator.write")
+        controlPage.value = null
+      }
+      composeRule.onNodeWithContentDescription("New session — Model chat").assertDoesNotExist()
+    }
     composeRule
-      .onNodeWithContentDescription("New session — Model chat")
+      .onNodeWithContentDescription(if (terminalCapable) "New chat — Model chat" else "New session — Model chat")
       .performScrollTo()
       .assertIsEnabled()
       .performClick()
@@ -267,6 +284,19 @@ class SidebarGatewayPickerTest {
       assertEquals("${AndroidScreenshotFixture.controlUiBaseUrl}/new?agent=main&catalog=codex", shadowOf(webView).lastLoadedUrl)
       assertEquals(originalSession, model.chatSessionKey.value)
       assertFalse(model.chatSessionCreating.value)
+      webView.webViewClient.doUpdateVisitedHistory(webView, "${AndroidScreenshotFixture.controlUiBaseUrl}/terminal/native-session", false)
+    }
+    restoration.emulateSavedInstanceStateRestore()
+    composeRule.runOnIdle {
+      val restored =
+        WindowInspector
+          .getGlobalWindowViews()
+          .filterIsInstance<ViewGroup>()
+          .asSequence()
+          .flatMap { it.descendants }
+          .filterIsInstance<WebView>()
+          .single()
+      assertEquals("${AndroidScreenshotFixture.controlUiBaseUrl}/terminal/native-session", shadowOf(restored).lastLoadedUrl)
     }
   }
 
@@ -1161,6 +1191,7 @@ class SidebarGatewayPickerTest {
                     onSelectSession = {},
                     onSelectCatalogSession = {},
                     onCreateCatalogSession = {},
+                    onStartCatalogSession = {},
                     onSelectDestination = {},
                   )
                 }

@@ -353,6 +353,7 @@ class SidebarCatalogGroupingTest {
             onSelectSession = {},
             onSelectCatalogSession = {},
             onCreateCatalogSession = {},
+            onStartCatalogSession = {},
             onSelectDestination = {},
           )
         }
@@ -449,6 +450,7 @@ class SidebarCatalogGroupingTest {
             onSelectSession = { selectedSessionKey = it.key },
             onSelectCatalogSession = {},
             onCreateCatalogSession = {},
+            onStartCatalogSession = {},
             onSelectDestination = {},
           )
         }
@@ -537,6 +539,7 @@ class SidebarCatalogGroupingTest {
             onSelectSession = {},
             onSelectCatalogSession = {},
             onCreateCatalogSession = {},
+            onStartCatalogSession = {},
             onSelectDestination = {},
           )
         }

@@ -425,7 +425,8 @@ internal fun OpenClawSidebar(
   onSelectAgent: (String) -> Unit,
   onSelectSession: (ChatSessionEntry) -> Unit,
   onSelectCatalogSession: (SessionCatalogEntry) -> Unit,
-  onCreateCatalogSession: (SessionCatalog) -> Unit,
+  onCreateCatalogSession: (String) -> Unit,
+  onStartCatalogSession: (SessionCatalog) -> Unit,
   onSelectDestination: (SidebarDestination) -> Unit,
   rowHostBand: IntRect? = null,
 ) {
@@ -805,6 +806,8 @@ internal fun OpenClawSidebar(
                 }
                 catalogSections.forEach { section ->
                   val catalog = section.catalog
+                  val primaryActionAvailable = sidebarCatalogSessionCreationEnabled(catalog, canMutateSessions, canStartTerminal)
+                  val separateChatAvailable = catalog.canStartTerminal && catalog.canCreateSession && canMutateSessions
                   key("catalog:${catalog.id}") {
                     SidebarCollapsibleHeader(
                       label = catalog.label,
@@ -816,21 +819,39 @@ internal fun OpenClawSidebar(
                       },
                       trailingContent =
                         if (
-                          sidebarCatalogSessionCreationEnabled(catalog, canMutateSessions, canStartTerminal) &&
+                          (primaryActionAvailable || separateChatAvailable) &&
                           catalogState.continuingEntryId == null
                         ) {
                           {
-                            IconButton(
-                              onClick = { onCreateCatalogSession(catalog) },
-                              enabled = !sessionCreating,
-                              modifier = Modifier.size(40.dp),
-                            ) {
-                              Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "${nativeString("New session")} — ${catalog.label}",
-                                tint = palette.text,
-                                modifier = Modifier.size(18.dp),
-                              )
+                            Row {
+                              if (separateChatAvailable) {
+                                IconButton(
+                                  onClick = { onCreateCatalogSession(catalog.id) },
+                                  enabled = !sessionCreating,
+                                  modifier = Modifier.size(40.dp),
+                                ) {
+                                  Icon(
+                                    imageVector = ClawIcons.Chat,
+                                    contentDescription = nativeString("\$action — \$catalog", nativeString("New chat"), catalog.label),
+                                    tint = palette.text,
+                                    modifier = Modifier.size(18.dp),
+                                  )
+                                }
+                              }
+                              if (primaryActionAvailable) {
+                                IconButton(
+                                  onClick = { if (catalog.canStartTerminal) onStartCatalogSession(catalog) else onCreateCatalogSession(catalog.id) },
+                                  enabled = !sessionCreating,
+                                  modifier = Modifier.size(40.dp),
+                                ) {
+                                  Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = nativeString("\$action — \$catalog", nativeString("New session"), catalog.label),
+                                    tint = palette.text,
+                                    modifier = Modifier.size(18.dp),
+                                  )
+                                }
+                              }
                             }
                           }
                         } else {

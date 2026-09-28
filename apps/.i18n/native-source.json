@@ -7,6 +7,7 @@
     {"id":"native.android.02597b3c21dc430b","source":" · Talk: Listening","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/NodeForegroundService.kt"}]},
     {"id":"native.android.adc3f0458665740b","source":" · Talk: On","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/NodeForegroundService.kt"}]},
     {"id":"native.android.90cbeaee6646da94","source":" · Talk: Speaking","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/NodeForegroundService.kt"}]},
+    {"id":"native.android.096b58bded900efb","source":"$action — $catalog","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/ui/SidebarContent.kt"}]},
     {"id":"native.android.e8be879ca2cec6d2","source":"$activityLabel · $currentPosition/${steps.size}","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/ui/chat/ChatScreen.kt"}]},
     {"id":"native.android.9f033f13a2912ad7","source":"$agentName is working","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/ui/ShellScreen.kt"}]},
     {"id":"native.android.91f4f2a864a987a4","source":"$connected/${summary.channels.size} connected","surface":"android","sites":[{"kind":"ui-call","path":"apps/android/app/src/main/java/ai/openclaw/app/ui/ShellScreen.kt"}]},

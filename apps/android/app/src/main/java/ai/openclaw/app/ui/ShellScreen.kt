@@ -281,16 +281,15 @@ fun ShellScreen(
                   }
                 }
               },
-              onCreateCatalogSession = { catalog ->
-                if (catalog.canStartTerminal) {
-                  viewModel.gatewayControlPage.value?.let { page ->
-                    nav.openCatalogSession(CatalogSessionStart(page.baseUrl, (chatSessionOwnerAgentId ?: gatewayDefaultAgentId).orEmpty(), catalog.id))
-                    closeSidebar()
-                  }
-                } else {
-                  nav.selectTab(Tab.Chat)
+              onCreateCatalogSession = { catalogId ->
+                nav.selectTab(Tab.Chat)
+                closeSidebar()
+                viewModel.createSessionCatalogEntry(catalogId)
+              },
+              onStartCatalogSession = { catalog ->
+                viewModel.gatewayControlPage.value?.let { page ->
+                  nav.openCatalogSession(CatalogSessionStart(page.baseUrl, (chatSessionOwnerAgentId ?: gatewayDefaultAgentId).orEmpty(), catalog.id))
                   closeSidebar()
-                  viewModel.createSessionCatalogEntry(catalog.id)
                 }
               },
               onSelectDestination = selectSidebarDestination,

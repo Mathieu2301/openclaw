@@ -31,8 +31,8 @@ internal fun TerminalSettingsScreen(
   ) {
     val page = controlPage
     if (isConnected && page != null && (catalogSessionStart == null || catalogSessionStart.gatewayBaseUrl == page.baseUrl)) {
-      // Trust changes recreate the WebView; unrelated recompositions preserve live shells.
-      key(page, catalogSessionStart) {
+      // The saved request ID survives restoration but distinguishes repeated explicit starts.
+      key(page.baseUrl, catalogSessionStart?.requestId) {
         ControlUiWebView(
           page = page,
           url = terminalUrl(page.baseUrl, catalogSessionStart),
