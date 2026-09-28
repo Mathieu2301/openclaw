@@ -236,8 +236,8 @@ export async function reconcileManagedCodexComputerUseCache(params: {
   forceRefresh?: boolean;
   previousCacheBinding?: string;
 }): Promise<string | undefined> {
-  // Startup has no effective native policy snapshot. Native plugin/install owns
-  // the replacement cache after readiness checks the disable and tool-policy vetoes.
+  // Startup has no effective native policy snapshot. Readiness reconciles the
+  // replacement cache only after checking the disable and tool-policy vetoes.
   const config = params.config;
   params.assertCurrent();
   const bundledMarketplacePath = params.managedMarketplacePath ?? params.bundledMarketplacePath;

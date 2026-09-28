@@ -323,6 +323,13 @@ failed replacement copy also preserves the active cache. Explicit
 `marketplaceName` or `marketplacePath` configuration disables this
 reconciliation so OpenClaw does not override that selection.
 
+When the desktop replaces legacy Computer Use with Unified Computer Use,
+automatic readiness refreshes the unified shared cache only after native policy
+permits the replacement. This also repairs stale generated launcher paths when
+the unified plugin is already installed and enabled at the same version, without
+reinstalling it. An already-current copy is unchanged; a disabled legacy plugin
+or legacy MCP/tool restrictions prevent automatic replacement and cache refresh.
+
 ## Remote marketplaces
 
 Remote marketplace support was introduced in Codex 0.146.1 and remains

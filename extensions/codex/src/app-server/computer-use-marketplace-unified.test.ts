@@ -20,6 +20,100 @@ import { createClientHarness, useAutoCleanupTempDirTracker } from "./test-suppor
 describe("managed unified Computer Use marketplace", () => {
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
+  it.each(["stale", "current", "disabled"])(
+    "reconciles an installed unified cache during automatic readiness (%s)",
+    async (cacheState) => {
+      const root = tempDirs.make("openclaw-unified-populated-cache-");
+      const candidate = await writeUnifiedCandidate(root);
+      const agentDir = path.join(root, "agent");
+      const codexHome = path.join(agentDir, "codex-home");
+      const marketplace = await ensureCodexManagedBundledMarketplace({
+        codexHome,
+        ownershipRoot: agentDir,
+        candidates: [candidate],
+      });
+      if (!marketplace) {
+        throw new Error("Expected a managed marketplace");
+      }
+      const source = path.join(marketplace, "plugins", "unified-computer-use");
+      const cache = path.join(codexHome, "plugins/cache/openai-bundled/unified-computer-use/2.0.0");
+      await fs.cp(source, cache, { recursive: true });
+      const currentMcp = await fs.readFile(path.join(source, ".mcp.json"), "utf8");
+      if (cacheState !== "current") {
+        const stale = JSON.parse(currentMcp);
+        stale.mcpServers.cua_repl.command = "/previous-desktop/cua_node/bin/node";
+        stale.mcpServers.cua_repl.env.SKY_CUA_SERVICE_PATH = "/previous-home/service.app";
+        await fs.writeFile(path.join(cache, ".mcp.json"), JSON.stringify(stale));
+      }
+      const before = await fs.lstat(cache);
+      const beforeMcp = await fs.readFile(path.join(cache, ".mcp.json"), "utf8");
+      const { client } = createClientHarness();
+      vi.spyOn(client, "getRuntimeIdentity").mockReturnValue({
+        serverVersion: "0.155.0",
+        codexHome,
+      });
+      const request = createComputerUseRequest({
+        installed: true,
+        pluginName: "unified-computer-use",
+        mcpServerName: "cua_repl",
+        mcpTools: ["js"],
+      });
+      const native = vi.mocked(request).getMockImplementation();
+      if (!native) {
+        throw new Error("Expected a native request fixture");
+      }
+      vi.mocked(request).mockImplementation(async (method, params, options) =>
+        method === "config/read"
+          ? {
+              config: {
+                plugins: { "computer-use@openai-bundled": { enabled: cacheState !== "disabled" } },
+              },
+              origins: {},
+              layers: null,
+            }
+          : await native(method, params, options),
+      );
+      const params = {
+        client,
+        request,
+        agentDir,
+        pluginConfig: {
+          computerUse: {
+            enabled: true,
+            autoInstall: true,
+            pluginCacheMode: "shared",
+            strictReadiness: false,
+          },
+        },
+      };
+      try {
+        if (cacheState === "disabled") {
+          await expectSetupErrorStatus(ensureCodexComputerUse(params), {
+            reason: "plugin_disabled",
+          });
+        } else {
+          await expect(ensureCodexComputerUse(params)).resolves.toMatchObject({ ready: true });
+        }
+        const after = await fs.lstat(cache);
+        expect(after.isDirectory()).toBe(true);
+        expect(after.isSymbolicLink()).toBe(false);
+        expect(await fs.readFile(path.join(cache, ".mcp.json"), "utf8")).toBe(
+          cacheState === "disabled" ? beforeMcp : currentMcp,
+        );
+        if (cacheState === "stale") {
+          expect(after.ino).not.toBe(before.ino);
+          await expect(ensureCodexComputerUse(params)).resolves.toMatchObject({ ready: true });
+        }
+        expect((await fs.lstat(cache)).ino).toBe(cacheState === "stale" ? after.ino : before.ino);
+        expect(vi.mocked(request).mock.calls.map(([method]) => method)).not.toContain(
+          "plugin/install",
+        );
+      } finally {
+        client.close();
+      }
+    },
+  );
+
   it.each(["codex", "codex-cli/CodexCLI.app/Contents/MacOS/codex"])(
     "materializes read-only desktop templates for %s before native installation",
     async (commandRelative) => {

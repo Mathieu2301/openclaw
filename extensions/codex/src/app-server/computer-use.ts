@@ -9,6 +9,7 @@ import {
   isCodexAppServerIndeterminateTransportError,
   type CodexAppServerClient,
 } from "./client.js";
+import { ensureCodexComputerUseSharedPluginCache } from "./computer-use-cache.js";
 import {
   resolveBundledComputerUseMarketplacePath,
   resolveClientManagedBundledMarketplacePath,
@@ -99,6 +100,7 @@ type CodexComputerUseInspectionParams = Omit<
   computerUseConfig: ResolvedCodexComputerUseConfig;
   runLiveTest: boolean;
   installMode: "none" | "automatic" | "explicit";
+  refreshSharedCache?: boolean;
   explicitManagedInstall?: ExplicitManagedComputerUseInstallContext;
 };
 
@@ -187,6 +189,7 @@ export async function ensureCodexComputerUse(
     computerUseConfig: config,
     runLiveTest: config.strictReadiness,
     installMode: "none",
+    refreshSharedCache: config.autoInstall,
   });
   if (status.ready) {
     return status;
@@ -201,6 +204,7 @@ export async function ensureCodexComputerUse(
       computerUseConfig: config,
       runLiveTest: config.strictReadiness,
       installMode: "automatic",
+      refreshSharedCache: true,
     });
     if (!installedStatus.ready) {
       throw new CodexComputerUseSetupError(installedStatus);
@@ -260,7 +264,7 @@ async function inspectCodexComputerUse(
       });
       lease.client = client;
     }
-    if (params.installMode === "none") {
+    if (params.installMode === "none" && !params.refreshSharedCache) {
       if (!lease.client) {
         return await inspectCodexComputerUseWithoutFence(params);
       }
@@ -443,6 +447,27 @@ async function inspectCodexComputerUseWithoutFence(
   });
   if (!pluginInspection.ok) {
     return pluginInspection.status;
+  }
+
+  if (
+    params.refreshSharedCache &&
+    computerUseConfig !== params.computerUseConfig &&
+    managedCodexHome &&
+    managedMarketplacePath &&
+    params.agentDir &&
+    params.client
+  ) {
+    const client = params.client;
+    await ensureCodexComputerUseSharedPluginCache({
+      codexHome: managedCodexHome,
+      ownershipRoot: params.agentDir,
+      bundledMarketplacePath: managedMarketplacePath,
+      config: computerUseConfig,
+      assertCurrent: () => {
+        params.assertCurrent?.();
+        assertCodexAppServerClientStartSelectionCurrent({ client });
+      },
+    });
   }
 
   return await readComputerUseTools({
