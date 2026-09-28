@@ -6,7 +6,6 @@ import { takeWorkspaceHashMemo } from "../gateway/worker-environments/workspace-
 import { isPathInside } from "../infra/path-guards.js";
 import { tightenPrivateDirRootSync } from "../infra/private-dir-mode.js";
 import { KeyedAsyncQueue } from "../plugin-sdk/keyed-async-queue.js";
-import { runCommandWithTimeout } from "../process/exec.js";
 import type {
   NodeWorkerPreparedWorkspaceInput,
   NodeWorkerPreparedWorkspaceResult,
@@ -667,19 +666,16 @@ export class NodeWorkerWorkspaceRuntime {
               this.beginWorkspaceOperation(input.gatewayNamespace, generationKey),
           });
         }
-        const result = await runCommandWithTimeout(input.argv, {
-          cwd: workspaceDir,
-          baseEnv: commandEnv,
-          ...(input.input === undefined ? {} : { input: input.input }),
+        const result = await this.processes.executeForeground({
+          input,
+          workspaceDir,
+          env: commandEnv,
+          signal,
           timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-          ...(signal ? { signal } : {}),
-          killProcessTree: true,
-          requireProcessTreeExtinction: true,
-          maxOutputBytes: {
-            stdout: NODE_WORKER_WORKSPACE_STDOUT_MAX_BYTES,
-            stderr: NODE_WORKER_WORKSPACE_STDERR_MAX_BYTES,
-          },
-          terminateOnOutputLimit: true,
+          stdoutLimit: NODE_WORKER_WORKSPACE_STDOUT_MAX_BYTES,
+          stderrLimit: NODE_WORKER_WORKSPACE_STDERR_MAX_BYTES,
+          retainWorkspace: () =>
+            this.beginWorkspaceOperation(input.gatewayNamespace, generationKey),
         });
         return projectNodeWorkerWorkspaceExecResult(workspaceDir, result);
       });

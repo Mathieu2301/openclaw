@@ -247,7 +247,8 @@ The existing installed-index SQLite payload records directory membership, device
 inode, mode, size, mtime, and ctime identities, SHA-256 digests, and the initial
 generation receipt. Unchanged warm startup reuses those facts. Added, removed, or
 changed companions require admission again; ctime-only uncertainty is resolved
-with a bounded rehash. Legacy reload receipts keep their framed raw-byte value,
+with a bounded rehash, including ordinary companion files whose inodes another
+capture retains or releases. Legacy reload receipts keep their framed raw-byte value,
 so a changed receipt still requires streaming its native payloads.
 Identity reuse cannot detect an edit that preserves every recorded identity field.
 Source code outside an admitted native namespace is captured and verified separately.
@@ -363,7 +364,11 @@ previously deleted captured files or recreate a missing ownership directory.
 Startup and hourly cleanup also reclaim tokenless `openclaw-plugin-build-*` and
 `openclaw-model-catalog-*` roots in the selected state's temporary directory and
 the current system temporary directory. Roots must be older than one hour and
-have no custody token. A complete process census that finds another OpenClaw
+have no custody token. On macOS and Linux, cleanup rechecks that each legacy root belongs
+to the current UID immediately before its rename, preserving other users' captures even in
+privileged runs. Windows has no equivalent UID check, so privileged Windows cleanup keeps
+the age and rename-probe rules below.
+A complete process census that finds another OpenClaw
 producer preserves legacy roots. When the census is unavailable, including on
 Windows, cleanup uses age and a rename probe instead; sharing violations leave
 locked roots for a later cycle. This is best-effort cleanup of reconstructible
@@ -412,7 +417,10 @@ worker retirement even after their capture files are removed, so actual source o
 configuration revisions can still retain module memory during that lifetime. Agent
 credentials and configured model facts travel with each request; catalog jobs do
 not rebuild the agent workspace. Discovery reuses the registrations already
-acquired by that context. Replacement releases them after admitted work settles.
+acquired by that context. The first catalog request prepares registrations for the
+agent's known configured and credential providers together; only the requested
+providers run catalog hooks. Newly observed owners extend that context without
+discarding earlier owners. Replacement releases them after admitted work settles.
 Successfully disposed registrations leave their plugin caches.
 
 Catalog observation is passive. Inventory requests can ask the catalog owner to

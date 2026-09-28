@@ -13,7 +13,10 @@ import { claimOpenClawStateOwnership } from "../state/openclaw-state-ownership-o
 import { NodeWorkerJournalWorker } from "./node-worker-journal-worker.js";
 import { NodeWorkerLaunchStore } from "./node-worker-launch-store.js";
 import { NodeWorkerLaunchKernel } from "./node-worker-launch-store.kernel.js";
-import { recordNodeWorkerLineageSettled } from "./node-worker-lineage-completion.js";
+import {
+  recordNodeWorkerDescendantsReaped,
+  recordNodeWorkerLineageSettled,
+} from "./node-worker-lineage-completion.js";
 import { requireNodeWorkerProcessIdentity } from "./node-worker-process-identity.js";
 import { projectNodeWorkerSupervisorReceipt } from "./node-worker-supervisor-contract.js";
 import { createNodeWorkerSupervisor } from "./node-worker-supervisor.js";
@@ -515,7 +518,7 @@ describe("node worker launch store container identity", () => {
 });
 
 describe("node worker cleanup journal", () => {
-  async function runningAnchor() {
+  async function runningAnchor(cleanupMode: "owned-anchor" | "linux-subreaper" = "owned-anchor") {
     const { database, env, store } = await fixture();
     const launchId = "anchor-launch";
     const { planHash, supervisor } = await claimLaunch(store, launchId);
@@ -525,11 +528,82 @@ describe("node worker cleanup journal", () => {
       planHash,
       supervisor,
       worker: supervisor,
-      cleanupMode: "owned-anchor",
+      cleanupMode,
       nowMs: NOW_MS,
     });
     return { database, env, store, binding, receipt };
   }
+
+  it("keeps native extinction distinct from old lineage receipts across reopen and retention", async () => {
+    const { database, env, store, binding, receipt } = await runningAnchor("linux-subreaper");
+    const version = database.prepare("PRAGMA user_version").get();
+    expect(receipt).toMatchObject({
+      workerCleanupMode: "linux-subreaper",
+      workerDescendantsReaped: false,
+      workerLineageSettled: false,
+    });
+    expect(recordNodeWorkerLineageSettled(binding)).toBe(false);
+    expect(recordNodeWorkerDescendantsReaped(binding)).toBe(true);
+    expect(await store.nonterminalCount()).toBe(1);
+    // A downgraded reader sees its unchanged representation, never a forged
+    // lineage completion standing in for a kernel tree certificate.
+    expect(
+      database
+        .prepare(
+          "SELECT cleanup_mode, lineage_settled FROM node_worker_launch_cleanup WHERE launch_id = ?",
+        )
+        .get(binding.launchId),
+    ).toEqual({ cleanup_mode: "owned-anchor", lineage_settled: null });
+    await closeOpenClawStateDatabaseAsync();
+    closeOpenClawStateDatabaseForTest();
+    const reopened = new NodeWorkerLaunchStore(new NodeWorkerJournalWorker({ env }));
+    expect(await reopened.get(binding.launchId)).toEqual({
+      ...receipt,
+      workerDescendantsReaped: true,
+    });
+    const db = openOpenClawStateDatabase({ env }).db;
+    expect(db.prepare("PRAGMA user_version").get()).toEqual(version);
+    await reopened.finish({
+      ...binding,
+      worker: receipt.worker,
+      state: "interrupted",
+      errorText: "scope retired",
+      nowMs: NOW_MS,
+    });
+    expect(recordNodeWorkerDescendantsReaped(binding)).toBe(false);
+    expect(await reopened.pruneExpiredTerminal({ nowMs: NOW_MS + DAY_MS })).toBe(1);
+    expect(
+      db.prepare("SELECT count(*) AS count FROM node_worker_launch_process_scopes").get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("never upgrades a legacy lineage receipt to native extinction", async () => {
+    const { store, binding } = await runningAnchor();
+    expect(recordNodeWorkerLineageSettled(binding)).toBe(true);
+    // A released journal has no native certificate table. Its schema admission
+    // refuses the wrong writer before any legacy receipt can be reinterpreted.
+    expect(() => recordNodeWorkerDescendantsReaped(binding)).toThrow(
+      /missing table node_worker_launch_process_scopes/u,
+    );
+    expect(await store.get(binding.launchId)).toMatchObject({
+      workerCleanupMode: "owned-anchor",
+      workerLineageSettled: true,
+    });
+    expect((await store.get(binding.launchId))?.workerDescendantsReaped).toBeUndefined();
+  });
+
+  it.each([
+    ["plan", "plan_hash = ?", "b".repeat(64)],
+    ["owner incarnation", "worker_start_time = worker_start_time + ?", 1],
+  ] as const)("rejects native certificates after changed %s", async (_label, assignment, value) => {
+    const { database, store, binding } = await runningAnchor("linux-subreaper");
+    database
+      .prepare(`UPDATE node_worker_launches SET ${assignment} WHERE launch_id = ?`)
+      .run(value, binding.launchId);
+    expect(recordNodeWorkerDescendantsReaped(binding)).toBe(false);
+    expect((await store.get(binding.launchId))?.workerDescendantsReaped).toBe(false);
+    expect(await store.nonterminalCount()).toBe(1);
+  });
 
   it("does not broaden a cleanup binding when ambient external mode changes", async () => {
     const { database, env, binding } = await runningAnchor();

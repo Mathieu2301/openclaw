@@ -55,6 +55,10 @@ function delay(ms: number): Promise<void> {
 
 export function runServiceChildGroupAnchor(): void {
   let start: ServiceChildStart | undefined;
+  let subreaper:
+    | ReturnType<typeof import("./linux-child-subreaper.js").acquireLinuxChildSubreaper>
+    | undefined;
+  let descendantsReaped = false;
   let state: AnchorState = "starting";
   let sequence = 0;
   let lastHostSequence = 0;
@@ -107,6 +111,29 @@ export function runServiceChildGroupAnchor(): void {
     deadline = Date.now() + GRACEFUL_CANCEL_TIMEOUT_MS,
   ) => {
     if (!start || state === "closed") {
+      return;
+    }
+    if (start.treeOwnership === "linux-subreaper") {
+      // Never exchange owner death for descendant extinction. Startup failure
+      // before admission has no application root; every admitted scope must drain.
+      if (command && !descendantsReaped) {
+        throw new Error("native owner cannot close before descendant extinction");
+      }
+      state = "closed";
+      for (const fd of new Set(start.parentLineageFds ?? [])) {
+        closeSync(fd);
+      }
+      closingSequence = sequence + 1;
+      await send({
+        type: "closing",
+        reason,
+        ...(descendantsReaped ? { descendantsReaped: true } : {}),
+      });
+      const acknowledged = await Promise.race([
+        retirementReady.promise,
+        delay(Math.max(0, deadline - Date.now())).then(() => false),
+      ]);
+      control?.end(() => process.exit(acknowledged ? 0 : 1));
       return;
     }
     state = "closed";
@@ -182,6 +209,48 @@ export function runServiceChildGroupAnchor(): void {
       return;
     }
     const cleanupDeadline = Date.now() + GRACEFUL_CANCEL_TIMEOUT_MS;
+    if (subreaper) {
+      try {
+        while (
+          !subreaper.drain(forceCleanup || Date.now() >= cleanupDeadline ? "SIGKILL" : "SIGTERM")
+        ) {
+          // Yield so libuv can consume its one direct root. Adopted children stay
+          // with the native wait owner even after the caller gives up waiting.
+          await delay(10);
+        }
+        descendantsReaped = true;
+        await rootExited.promise;
+        await rootResultDelivery;
+        await rootSettledDone.promise;
+        await lineageDone.promise;
+        if (start.ownedWorker && lineageCompletion) {
+          let recorded = false;
+          try {
+            recorded = lineageCompletion.recordNodeWorkerDescendantsReaped(start.cleanupBinding);
+          } catch {
+            // The live host can still consume this exact kernel proof. A new
+            // supervisor must retain custody without the separate durable fact.
+          }
+          if (!recorded) {
+            await send({
+              type: "output",
+              stream: "stderr",
+              chunk:
+                "node worker descendant extinction was not recorded; restart recovery retains capacity\n",
+            });
+          }
+        }
+        await closeAuthority(reason, false);
+      } catch (error) {
+        // Failed native custody remains owned and unknown. Transport closure must
+        // not turn a denied signal or failed durable write into a closing receipt.
+        await send({
+          type: "result-error",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      return;
+    }
     const termGraceDone = delay(GRACEFUL_CANCEL_TIMEOUT_MS);
     if (start.ownedWorker) {
       if (!forceCleanup) {
@@ -319,11 +388,18 @@ export function runServiceChildGroupAnchor(): void {
         return;
       }
       workerStarted = true;
-      command.send({ type: "openclaw-worker-start-v1", lineageFds: workerLineageFds }, (error) => {
-        if (error) {
-          void requestCleanup("parent-lost");
-        }
-      });
+      command.send(
+        {
+          type: "openclaw-worker-start-v1",
+          lineageFds: workerLineageFds,
+          ...(start.nativeProcessOwner ? { nativeProcessOwner: start.nativeProcessOwner } : {}),
+        },
+        (error) => {
+          if (error) {
+            void requestCleanup("parent-lost");
+          }
+        },
+      );
       return;
     }
     void requestCleanup("cancel", message.signal);
@@ -380,6 +456,21 @@ export function runServiceChildGroupAnchor(): void {
       next.ownedWorker && (typeof WORKER_DEPLOY_BUILD !== "boolean" || !WORKER_DEPLOY_BUILD)
         ? await import("../../node-host/node-worker-lineage-completion.js").catch(() => undefined)
         : undefined;
+    if (next.treeOwnership === "linux-subreaper") {
+      try {
+        const nativeOwner =
+          typeof WORKER_DEPLOY_BUILD === "boolean" && WORKER_DEPLOY_BUILD
+            ? undefined
+            : await import("./linux-child-subreaper.js");
+        if (!nativeOwner) {
+          throw new Error("portable workers require their admitted host-native process owner");
+        }
+        subreaper = nativeOwner.acquireLinuxChildSubreaper();
+      } catch (error) {
+        await reportStartupFailure(error instanceof Error ? error.message : String(error));
+        return;
+      }
+    }
     if (
       start !== next ||
       control !== socket ||
@@ -403,6 +494,9 @@ export function runServiceChildGroupAnchor(): void {
         detached: false,
         windowsHide: true,
       });
+      if (command.pid) {
+        subreaper?.retainLibuvChild(command.pid);
+      }
       // Failed Bun spawns have no stdio. Preserve the spawn error before checking lineage.
       await once(command, "spawn");
     } catch (error) {
@@ -535,6 +629,7 @@ export function runServiceChildGroupAnchor(): void {
         type: "ready",
         commandPid: command.pid,
         anchorPid: process.pid,
+        ...(subreaper ? { treeOwnership: "linux-subreaper" as const } : {}),
       });
     }
     command.once("exit", (code, signal) => {
@@ -544,6 +639,9 @@ export function runServiceChildGroupAnchor(): void {
       rootResultDelivery = send({ type: "root-result", code, signal });
       rootExited.resolve();
       void settleRoot();
+      if (subreaper && state === "active") {
+        void requestCleanup("lineage-lost");
+      }
     });
   };
 
