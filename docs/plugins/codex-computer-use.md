@@ -315,7 +315,9 @@ marketplace JSON file path, not the bundled marketplace root.
 The default `pluginCacheMode: "independent"` leaves each Codex home and its
 plugin cache unmanaged. Set `pluginCacheMode: "shared"` to copy the bundled
 Computer Use plugin into the active Codex home's discoverable plugin cache
-before app-server startup. Shared mode preserves older cached versions because
+before app-server startup. The cached version is a real directory even when the
+bundled source is symlinked, and repeated startup in the same desktop generation
+leaves an up-to-date copy unchanged. Shared mode preserves older cached versions because
 running Codex clients can still reference their versioned plugin directories; a
 failed replacement copy also preserves the active cache. Explicit
 `marketplaceName` or `marketplacePath` configuration disables this

@@ -128,7 +128,10 @@ async function ensureRealDirectoryCopy(
   );
   let backupCreated = false;
   try {
-    await fs.cp(sourcePluginRoot, stagedPath, { recursive: true });
+    // The managed marketplace links to desktop plugins; native discovery needs a
+    // real version directory. Resolve only the root, preserving nested symlinks.
+    const physicalSourceRoot = await fs.realpath(sourcePluginRoot);
+    await fs.cp(physicalSourceRoot, stagedPath, { recursive: true });
     // Source-copy notifications are only invalidations; reconcile them before
     // the original generation's synchronous guard authorizes publication.
     await waitForCodexDesktopGeneration();
