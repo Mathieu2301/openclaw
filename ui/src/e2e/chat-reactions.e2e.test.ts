@@ -68,6 +68,11 @@ async function expectCompactPicker(picker: Locator) {
         .querySelector(".chat-reaction-toggle span")!,
     );
     return {
+      coarsePointer: matchMedia("(pointer: coarse)").matches,
+      targetWidth: element.querySelector(".chat-reaction-picker button")!.getBoundingClientRect()
+        .width,
+      targetHeight: element.querySelector(".chat-reaction-picker button")!.getBoundingClientRect()
+        .height,
       pickerEmojiSize: pickerEmoji.fontSize,
       reactionEmojiSize: reactionEmoji.fontSize,
       pickerEmojiFont: pickerEmoji.fontFamily,
@@ -88,9 +93,11 @@ async function expectCompactPicker(picker: Locator) {
   });
   expect(geometry.pickerEmojiSize).toBe(geometry.reactionEmojiSize);
   expect(geometry.pickerEmojiFont).toBe(geometry.reactionEmojiFont);
-  expect(geometry.width).toBeLessThanOrEqual(210);
+  expect(geometry.width).toBeLessThanOrEqual(geometry.coarsePointer ? 204 : 124);
+  expect(geometry.targetWidth).toBeGreaterThanOrEqual(geometry.coarsePointer ? 44 : 24);
+  expect(geometry.targetHeight).toBeGreaterThanOrEqual(geometry.coarsePointer ? 44 : 24);
   expect(Math.abs(geometry.center - geometry.triggerCenter)).toBeLessThanOrEqual(1);
-  expect(geometry.height).toBeLessThanOrEqual(160);
+  expect(geometry.height).toBeLessThanOrEqual(geometry.coarsePointer ? 150 : 110);
   expect(geometry.left).toBeGreaterThanOrEqual(8);
   expect(geometry.right).toBeLessThanOrEqual(geometry.viewport - 8);
   expect(geometry.searchTop).toBeGreaterThanOrEqual(geometry.choicesBottom);

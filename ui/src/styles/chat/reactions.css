@@ -179,13 +179,23 @@ openclaw-chat-message-reactions {
 }
 
 .chat-reaction-popover {
+  --chat-reaction-picker-cell: calc(var(--chat-reaction-emoji-size) + 12px);
+  --chat-reaction-picker-gap: 4px;
+  --chat-reaction-picker-padding: 6px;
+
   box-sizing: border-box;
-  width: min(208px, calc(100vw - 24px));
+  width: min(
+    calc(
+      4 * var(--chat-reaction-picker-cell) + 3 * var(--chat-reaction-picker-gap) + 2 *
+        var(--chat-reaction-picker-padding) + 2px
+    ),
+    calc(100vw - 24px)
+  );
   max-height: min(320px, var(--auto-size-available-height, calc(100dvh - 24px)));
   overflow: auto;
-  padding: 8px;
+  padding: var(--chat-reaction-picker-padding);
   border: 1px solid var(--overlay-border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--bg-elevated);
   box-shadow: var(--overlay-shadow);
   color: var(--text);
@@ -202,23 +212,23 @@ openclaw-chat-message-reactions {
   width: 100%;
   min-height: 30px;
   margin-top: 6px;
-  padding: 5px 8px;
+  padding: 5px 6px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--chat-reaction-emoji-size);
 }
 
 .chat-reaction-picker {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
+  gap: var(--chat-reaction-picker-gap);
 }
 
 .chat-reaction-picker button {
-  min-height: 32px;
+  min-height: var(--chat-reaction-picker-cell);
   padding: 4px;
   border: 0;
   border-radius: 8px;
@@ -260,8 +270,8 @@ openclaw-chat-message-reactions {
 }
 
 @media (pointer: coarse) {
-  .chat-reaction-picker button {
-    min-height: 44px;
+  .chat-reaction-popover {
+    --chat-reaction-picker-cell: 44px;
   }
 
   .chat-reaction-chip,
