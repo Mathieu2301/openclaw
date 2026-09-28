@@ -1929,6 +1929,10 @@ class MainViewModel private constructor(
     viewModelScope.launch { onCompleted(ensureRuntime().continueSessionCatalogEntry(entry)) }
   }
 
+  fun createSessionCatalogEntry(catalogId: String) {
+    viewModelScope.launch { ensureRuntime().createSessionCatalogEntry(catalogId) }
+  }
+
   fun setSidebarPageOrder(pageIds: List<String>) {
     prefs.setSidebarPageOrder(pageIds)
   }

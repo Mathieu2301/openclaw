@@ -274,7 +274,7 @@ internal fun sidebarCatalogSections(
 ): List<SidebarCatalogSection> =
   catalogs
     .filter { catalog ->
-      catalog.canStartTerminal ||
+      catalog.canCreateSession || catalog.canStartTerminal ||
         catalog.errorText != null ||
         catalog.hosts.any { host ->
           host.errorText != null || host.nextCursor != null || host.sessions.any { !it.archived }
@@ -288,8 +288,9 @@ internal fun sidebarCatalogSections(
 
 internal fun sidebarCatalogSessionCreationEnabled(
   catalog: SessionCatalog,
+  canMutateSessions: Boolean,
   canStartTerminal: Boolean,
-): Boolean = catalog.canStartTerminal && canStartTerminal
+): Boolean = if (catalog.canStartTerminal) canStartTerminal else catalog.canCreateSession && canMutateSessions
 
 internal fun toggleSidebarCatalogExpansion(
   expandedCatalogIds: List<String>,
@@ -424,7 +425,7 @@ internal fun OpenClawSidebar(
   onSelectAgent: (String) -> Unit,
   onSelectSession: (ChatSessionEntry) -> Unit,
   onSelectCatalogSession: (SessionCatalogEntry) -> Unit,
-  onCreateCatalogSession: (String) -> Unit,
+  onCreateCatalogSession: (SessionCatalog) -> Unit,
   onSelectDestination: (SidebarDestination) -> Unit,
   rowHostBand: IntRect? = null,
 ) {
@@ -449,8 +450,9 @@ internal fun OpenClawSidebar(
   val sessionCreating by viewModel.chatSessionCreating.collectAsState()
   val catalogAvailable by viewModel.sessionCatalogAvailable.collectAsState()
   val operatorScopes by viewModel.operatorScopes.collectAsState()
+  val controlPage by viewModel.gatewayControlPage.collectAsState()
   val canMutateSessions = operatorScopesAllowWrite(operatorScopes)
-  val canStartTerminal = connection.isConnected && operatorScopesAllowAdmin(operatorScopes)
+  val canStartTerminal = connection.isConnected && controlPage != null && operatorScopesAllowAdmin(operatorScopes)
   val liveSessionsByKey = remember(sessions) { sessions.associateBy(ChatSessionEntry::key) }
   val pageOrder by viewModel.sidebarPageOrder.collectAsState()
   val visiblePageIds by viewModel.sidebarVisiblePages.collectAsState()
@@ -814,12 +816,12 @@ internal fun OpenClawSidebar(
                       },
                       trailingContent =
                         if (
-                          sidebarCatalogSessionCreationEnabled(catalog, canStartTerminal) &&
+                          sidebarCatalogSessionCreationEnabled(catalog, canMutateSessions, canStartTerminal) &&
                           catalogState.continuingEntryId == null
                         ) {
                           {
                             IconButton(
-                              onClick = { onCreateCatalogSession(catalog.id) },
+                              onClick = { onCreateCatalogSession(catalog) },
                               enabled = !sessionCreating,
                               modifier = Modifier.size(40.dp),
                             ) {

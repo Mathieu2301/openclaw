@@ -2903,6 +2903,11 @@ class NodeRuntime private constructor(
     }
   }
 
+  suspend fun createSessionCatalogEntry(catalogId: String): Boolean {
+    retirePendingChatSelection()
+    return chat.startNewChatAwait(catalogId = catalogId)
+  }
+
   fun setSkillEnabled(
     skillKey: String,
     enabled: Boolean,

@@ -12,6 +12,7 @@ import ai.openclaw.app.PermissionRequester
 import ai.openclaw.app.SecurePrefs
 import ai.openclaw.app.SessionCatalogState
 import ai.openclaw.app.bindNodeRuntimeTestFixture
+import ai.openclaw.app.chat.ChatCacheScope
 import ai.openclaw.app.chat.ChatController
 import ai.openclaw.app.closeNodeRuntimeTestFixture
 import ai.openclaw.app.drainWithMainLooper
@@ -189,6 +190,49 @@ class SidebarGatewayPickerTest {
 
   @Test
   @Config(sdk = [31], qualifiers = "w412dp-h820dp-mdpi")
+  fun modelOnlyCatalogPlusCreatesChatWithWriteScope() {
+    model.enterScreenshotFixtureMode(AndroidScreenshotScene.CompletedWork)
+    val catalogs =
+      parseSessionCatalogs(
+        """{"catalogs":[{"id":"model-only","label":"Model chat","capabilities":{"createSession":{"model":"example/chat"}},"hosts":[]}]}""",
+        requestedAgentId = "main",
+      )
+    ReflectionHelpers.getField<MutableStateFlow<SessionCatalogState>>(runtime, "_sessionCatalogState").value =
+      SessionCatalogState(catalogs = catalogs, agentId = "main")
+    ReflectionHelpers.getField<MutableStateFlow<Boolean>>(runtime, "_sessionCatalogAvailable").value = true
+    ReflectionHelpers.getField<MutableStateFlow<List<String>>>(runtime, "_operatorScopes").value = listOf("operator.read", "operator.write")
+    ReflectionHelpers.getField<MutableStateFlow<NodeRuntime.GatewayControlPage?>>(runtime, "_gatewayControlPage").value = null
+    val requests = mutableListOf<Pair<String, String?>>()
+    val request = ReflectionHelpers.getField<suspend (String, String?) -> String>(runtime.chat, "requestGateway")
+    val captureLease: (ChatCacheScope?) -> GatewaySession.RequestLease? = { scope ->
+      GatewaySession.RequestLease(endpointStableId = scope?.gatewayId.orEmpty()) { method, params, _, withEnqueue ->
+        withEnqueue {}
+        requests += method to params
+        if (method == "sessions.create") """{"key":"agent:main:dashboard:model-chat"}""" else request(method, params)
+      }
+    }
+    ReflectionHelpers.setField(runtime.chat, "captureRequestLease", captureLease)
+    showSidebarAndComposer(dark = false, showShell = true)
+    composeRule.runOnIdle { runtime.chat.load("agent:main:dashboard:existing") }
+    drainWithMainLooper { withTimeout(5_000) { model.chatHistoryLoading.first { !it } } }
+    composeRule.runOnIdle { assertEquals(0, model.pendingRunCount.value) }
+    composeRule.onNodeWithContentDescription("Show Sidebar").performClick()
+    capture("model-catalog-plus")
+    composeRule
+      .onNodeWithContentDescription("New session — Model chat")
+      .performScrollTo()
+      .assertIsEnabled()
+      .performClick()
+    drainWithMainLooper { withTimeout(5_000) { model.chatSessionKey.first { it == "agent:main:dashboard:model-chat" } } }
+    composeRule.runOnIdle {
+      assertEquals(listOf("sessions.create" to """{"agentId":"main","catalogId":"model-only"}"""), requests.filter { it.first == "sessions.create" })
+      assertFalse(requests.any { it.first == "sessions.catalog.startTerminal" })
+    }
+    composeRule.onNodeWithText("Terminal").assertDoesNotExist()
+  }
+
+  @Test
+  @Config(sdk = [31], qualifiers = "w412dp-h820dp-mdpi")
   fun nativeCatalogPlusOpensGatewaySetupInsteadOfCreatingChat() {
     model.enterScreenshotFixtureMode(AndroidScreenshotScene.CompletedWork)
     val catalogs =
@@ -200,9 +244,14 @@ class SidebarGatewayPickerTest {
       SessionCatalogState(catalogs = catalogs, agentId = "main")
     ReflectionHelpers.getField<MutableStateFlow<Boolean>>(runtime, "_sessionCatalogAvailable").value = true
     val originalSession = model.chatSessionKey.value
+    val controlPage = ReflectionHelpers.getField<MutableStateFlow<NodeRuntime.GatewayControlPage?>>(runtime, "_gatewayControlPage")
+    val page = requireNotNull(controlPage.value)
+    controlPage.value = null
     showSidebarAndComposer(dark = false, showShell = true)
     composeRule.onNodeWithContentDescription("Show Sidebar").performClick()
     composeRule.onNodeWithText("Codex").performScrollTo().assertIsDisplayed()
+    composeRule.onNodeWithContentDescription("New session — Codex").assertDoesNotExist()
+    composeRule.runOnIdle { controlPage.value = page }
     capture("catalog-plus")
     composeRule.onNodeWithContentDescription("New session — Codex").assertIsEnabled().performClick()
     composeRule.onNodeWithText("Terminal").assertIsDisplayed()

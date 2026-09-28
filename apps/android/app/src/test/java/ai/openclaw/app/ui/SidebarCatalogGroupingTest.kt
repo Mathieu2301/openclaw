@@ -257,13 +257,16 @@ class SidebarCatalogGroupingTest {
   }
 
   @Test
-  fun catalogCreationRequiresAdvertisedCapabilityAndTerminalAccess() {
+  fun catalogCreationRequiresAccessForTheAdvertisedOperation() {
     val creatable = SessionCatalog(id = "codex", label = "Codex", hosts = emptyList(), canStartTerminal = true)
-    val unavailable = creatable.copy(canStartTerminal = false)
-
-    assertTrue(sidebarCatalogSessionCreationEnabled(creatable, canStartTerminal = true))
-    assertFalse(sidebarCatalogSessionCreationEnabled(creatable, canStartTerminal = false))
-    assertFalse(sidebarCatalogSessionCreationEnabled(unavailable, canStartTerminal = true))
+    for (canCreate in listOf(false, true)) {
+      for (canWrite in listOf(false, true)) {
+        for (canStart in listOf(false, true)) {
+          assertEquals(canStart, sidebarCatalogSessionCreationEnabled(creatable.copy(canCreateSession = canCreate), canWrite, canStart))
+          assertEquals(canCreate && canWrite, sidebarCatalogSessionCreationEnabled(creatable.copy(canCreateSession = canCreate, canStartTerminal = false), canWrite, canStart))
+        }
+      }
+    }
   }
 
   @Test
