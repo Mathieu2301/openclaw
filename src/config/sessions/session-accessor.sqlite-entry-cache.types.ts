@@ -29,6 +29,8 @@ export type SessionSharingEntry = Pick<
   | "createdActor"
   | "sandbox"
   | "spawnedBy"
+  | "parentSessionKey"
+  | "sessionStartedAt"
 >;
 
 export type SessionEntryReplacementPublication = {
@@ -51,6 +53,8 @@ export function projectSessionSharingEntry(entry: SessionEntry): SessionSharingE
     createdActor: entry.createdActor ? { ...entry.createdActor } : undefined,
     sandbox: entry.sandbox,
     spawnedBy: entry.spawnedBy,
+    parentSessionKey: entry.parentSessionKey,
+    sessionStartedAt: entry.sessionStartedAt,
   };
 }
 
