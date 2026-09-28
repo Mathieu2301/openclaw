@@ -497,6 +497,40 @@ describe("managed plugin catalog", () => {
     expect(mocks.pluginVersionCategories).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { contracts: { videoGenerationProviders: ["video"] }, expected: ["media"] },
+    { contracts: { imageGenerationProviders: ["image"] }, expected: ["media"] },
+    { contracts: { musicGenerationProviders: ["music"] }, expected: ["media"] },
+    { contracts: { videoGenerationProviders: [] }, expected: undefined },
+    { contracts: { speechProviders: ["speech"] }, expected: undefined },
+  ])(
+    "derives Media discovery independently of primary category and enablement (%j)",
+    async ({ contracts, expected }) => {
+      mocks.metadata.mockReturnValue(
+        metadataSnapshot({
+          enabled: false,
+          id: "model-provider",
+          categories: ["models"],
+          contracts,
+        }),
+      );
+      const catalog = await listManagedPlugins({
+        config: {},
+        env: {},
+        officialCatalog: { entries: [] },
+      });
+      const plugin = expectDefined(catalog.plugins[0]);
+      expect(plugin.categories).toEqual(["models"]);
+      expect(plugin.enabled).toBe(false);
+      if (expected) {
+        expect(plugin).toHaveProperty("capabilityCategories", expected);
+      } else {
+        expect(plugin).not.toHaveProperty("capabilityCategories");
+      }
+      expect(mocks.pluginVersionCategories).not.toHaveBeenCalled();
+    },
+  );
+
   it("batch-enriches missing categories from the exact installed ClawHub version", async () => {
     mocks.metadata.mockReturnValue(
       metadataSnapshot({
