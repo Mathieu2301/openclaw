@@ -1,14 +1,12 @@
 /** Converts cron jobs between public store shape and normalized SQLite rows. */
 import type { DatabaseSync } from "node:sqlite";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sha256Hex } from "../../infra/crypto-digest.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   sqliteStringSet,
 } from "../../infra/kysely-sync.js";
-import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import { tableExists } from "../../state/openclaw-state-db-schema-helpers.js";
 import { hashCronJobDefinition } from "../definition-hash.js";
 import { normalizeCronJobIdentityFields } from "../normalize-job-identity.js";
@@ -288,52 +286,6 @@ export function readCronJobsFingerprint(db: DatabaseSync, storeKey: string): str
       .where("store_key", "=", storeKey),
   ).rows;
   return fingerprintCronJobRows(rows);
-}
-
-/** Materializes retired ownership within the caller's write transaction. */
-export function materializeCronRowAgentOwners(
-  db: DatabaseSync,
-  storeKey: string,
-  legacyDefaultAgentId: string,
-): number {
-  const agentId = normalizeAgentId(legacyDefaultAgentId);
-  let rewritten = 0;
-  for (const row of loadCronRows(db, storeKey)) {
-    const jobJson = tryParseJsonObject(row.job_json);
-    const jsonSessionAgentId = parseAgentSessionKey(
-      normalizeOptionalString(jobJson?.sessionKey),
-    )?.agentId;
-    if (
-      normalizeOptionalString(row.agent_id) ||
-      normalizeOptionalString(jobJson?.agentId) ||
-      jsonSessionAgentId
-    ) {
-      continue;
-    }
-    if (jobJson) {
-      jobJson.agentId = agentId;
-    }
-    executeSqliteQuerySync(
-      db,
-      getCronStoreKysely(db)
-        .updateTable("cron_jobs")
-        .set((eb) => ({
-          agent_id: agentId,
-          ...(jobJson ? { job_json: JSON.stringify(jobJson) } : {}),
-          grant_definition_revision: null,
-          grant_definition_generation: eb(
-            eb.fn.coalesce("grant_definition_generation", eb.val(0)),
-            "+",
-            1,
-          ),
-          grant_definition_updated_at: null,
-        }))
-        .where("store_key", "=", storeKey)
-        .where("job_id", "=", row.job_id),
-    );
-    rewritten += 1;
-  }
-  return rewritten;
 }
 
 export type CronJobFamilyIdentity = {
@@ -656,19 +608,41 @@ export function updateCronRuntimeRows(
   store: CronStoreFile,
 ): void {
   for (const job of store.jobs) {
-    executeSqliteQuerySync(
-      db,
-      getCronStoreKysely(db)
-        .updateTable("cron_jobs")
-        .set({
-          state_json: serializeCronJobState(job.state ?? {}),
-          runtime_updated_at_ms: job.updatedAtMs,
-          schedule_identity: tryCronScheduleIdentity({ ...job }),
-        })
-        .where("store_key", "=", storeKey)
-        .where("job_id", "=", job.id),
-    );
+    updateCronRuntimeRow(db, storeKey, job);
   }
+}
+
+/** Preserves stored definitions except an explicit runtime enable/disable transition. */
+export function updateCronRuntimeRow(
+  db: DatabaseSync,
+  storeKey: string,
+  job: CronStoredJob,
+  previousEnabled?: boolean,
+): void {
+  const enabled = job.enabled ?? true;
+  const enabledChanged = previousEnabled !== undefined && previousEnabled !== enabled;
+  executeSqliteQuerySync(
+    db,
+    getCronStoreKysely(db)
+      .updateTable("cron_jobs")
+      .set((eb) => ({
+        state_json: serializeCronJobState(job.state ?? {}),
+        runtime_updated_at_ms: job.updatedAtMs,
+        schedule_identity: tryCronScheduleIdentity({ ...job }),
+        ...(enabledChanged
+          ? {
+              enabled: enabled ? 1 : 0,
+              job_json: eb.fn<string>("json_set", [
+                eb.ref("job_json"),
+                eb.val("$.enabled"),
+                eb.fn<string>("json", [eb.val(enabled ? "true" : "false")]),
+              ]),
+            }
+          : {}),
+      }))
+      .where("store_key", "=", storeKey)
+      .where("job_id", "=", job.id),
+  );
 }
 
 /** Reconstructs loaded cron store data and config-runtime sidecars from SQLite rows. */

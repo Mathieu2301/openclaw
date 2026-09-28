@@ -10,7 +10,7 @@ import {
   deleteStaleCronJobFamilyRows,
   loadedCronStoreFromRows,
   loadCronRows,
-  upsertCronJobRow,
+  updateCronRuntimeRow,
 } from "./row-codec.js";
 import {
   activateCronRunReceiptInDatabase,
@@ -81,7 +81,7 @@ export function activateCronRunInWorker(
           current.state.runningReceiptId = receipt.receiptId;
           delete current.state.runningScheduleChangeId;
           current.state.lastError = undefined;
-          upsertCronJobRow(db, input.storeKey, current, row.sort_order, { knownExistingRow: row });
+          updateCronRuntimeRow(db, input.storeKey, current);
         } catch (error) {
           if (!(error instanceof CronRunReceiptRevisionError)) {
             throw error;
@@ -148,6 +148,7 @@ export function releaseCronReservationsInWorker(
         if (!queuedMatches && !runningMatches) {
           continue;
         }
+        const previousEnabled = job.enabled ?? true;
         if (input.restoreLastError && reservation.activationPreviousLastError) {
           job.state.lastError = reservation.activationPreviousLastError.value;
         }
@@ -167,7 +168,7 @@ export function releaseCronReservationsInWorker(
             deferredNotifications: outcome.notifications,
           });
         }
-        upsertCronJobRow(db, input.storeKey, job, row.sort_order, { knownExistingRow: row });
+        updateCronRuntimeRow(db, input.storeKey, job, previousEnabled);
         outcome.jobs.push(job);
       }
       if (input.terminal && !preparation.deferTerminal) {

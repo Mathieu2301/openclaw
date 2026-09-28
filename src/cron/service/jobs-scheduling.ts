@@ -435,22 +435,6 @@ function normalizeJobTickState(params: {
     changed = true;
   }
 
-  if (job.schedule.kind === "every" && !hasInvalidExplicitEveryAnchor(job.schedule)) {
-    const normalizedAnchorMs = resolveEveryAnchorMs({
-      schedule: job.schedule,
-      fallbackAnchorMs: isFiniteTimestamp(job.createdAtMs) ? job.createdAtMs : nowMs,
-    });
-    if (job.schedule.anchorMs !== normalizedAnchorMs) {
-      job.schedule = {
-        ...job.schedule,
-        anchorMs: normalizedAnchorMs,
-      };
-      job.state.pacedNextRunAtMs = undefined;
-      job.state.forcePreservedNextRunAtMs = undefined;
-      changed = true;
-    }
-  }
-
   // Event schedules cannot retain a timed slot, including one preserved by a force run.
   if (!isJobEnabled(job) || !isTimeScheduledJob(job)) {
     for (const key of TIME_SCHEDULE_STATE_FIELDS) {

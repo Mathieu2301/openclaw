@@ -100,48 +100,72 @@ function receipts(storePath: string, jobId: string) {
 }
 
 describe("ownerless reservation and manual completion", () => {
-  it("keeps an owned sibling reserved while recording only the ownerless scheduled skip", async () => {
-    const ownerless = commandJob("ownerless-batch");
-    const owned = { ...commandJob("owned-batch"), agentId: "ops" };
-    const { state, storePath, events, execute } = await setupOwnerlessJob(ownerless);
-    await saveCronStore(storePath, { version: 1, jobs: [ownerless, owned] });
-    await list(state);
-    const reserved = await persistQueuedCronRunReservations({
-      state,
-      candidates: [ownerless, owned],
-      reservedAtMs: NOW,
-    });
-    try {
-      expect(reserved.map(({ job }) => job.id)).toEqual([owned.id]);
-      const persisted = (await loadCronStore(storePath)).jobs;
-      expect(persisted.find((job) => job.id === ownerless.id)?.state).toMatchObject({
-        lastRunStatus: "skipped",
-        lastError: CRON_AGENT_SELECTION_REQUIRED_MESSAGE,
+  it.each([
+    {
+      name: "unresolved default",
+      legacyOwner: undefined,
+      ambient: undefined,
+      error: CRON_AGENT_SELECTION_REQUIRED_MESSAGE,
+    },
+    {
+      name: "retained historical owner",
+      legacyOwner: "ops",
+      ambient: "research",
+      error:
+        'Legacy cron ownership needs repair. Run "openclaw doctor --fix" before running, editing, or removing this job.',
+    },
+  ])(
+    "keeps an owned sibling reserved while recording the $name skip",
+    async ({ legacyOwner, ambient, error }) => {
+      const ownerless = commandJob("ownerless-batch");
+      const owned = { ...commandJob("owned-batch"), agentId: "ops" };
+      const { state, storePath, events, execute } = await setupOwnerlessJob(
+        ownerless,
+        () => ambient,
+      );
+      state.deps.legacyDefaultAgentId = legacyOwner;
+      await saveCronStore(storePath, { version: 1, jobs: [ownerless, owned] });
+      await list(state);
+      const reserved = await persistQueuedCronRunReservations({
+        state,
+        candidates: [ownerless, owned],
+        reservedAtMs: NOW,
       });
-      expect(persisted.find((job) => job.id === owned.id)?.state.queuedAtMs).toBe(NOW);
-      expect(events.filter((event) => event.action === "finished")).toEqual([
-        expect.objectContaining({ jobId: ownerless.id, status: "skipped" }),
-      ]);
-      expect(history(storePath, ownerless.id)).toEqual([
-        expect.objectContaining({
-          jobId: ownerless.id,
-          status: "skipped",
-          completionStatus: "failed",
-          error: CRON_AGENT_SELECTION_REQUIRED_MESSAGE,
-        }),
-      ]);
-      expect(receipts(storePath, ownerless.id)).toEqual([]);
-      expect(execute).not.toHaveBeenCalled();
-    } finally {
-      for (const reservation of reserved) {
-        finishCronRunReceipt({
-          handle: reservation.runReceipt,
-          status: "skipped",
-          finishedAtMs: NOW,
+      try {
+        expect(
+          reserved.map(({ job }) => job.id),
+          "Unresolved historical jobs must not receive ambient-owner reservations",
+        ).toEqual([owned.id]);
+        const persisted = (await loadCronStore(storePath)).jobs;
+        expect(persisted.find((job) => job.id === ownerless.id)?.state).toMatchObject({
+          lastRunStatus: "skipped",
+          lastError: error,
         });
+        expect(persisted.find((job) => job.id === owned.id)?.state.queuedAtMs).toBe(NOW);
+        expect(events.filter((event) => event.action === "finished")).toEqual([
+          expect.objectContaining({ jobId: ownerless.id, status: "skipped" }),
+        ]);
+        expect(history(storePath, ownerless.id)).toEqual([
+          expect.objectContaining({
+            jobId: ownerless.id,
+            status: "skipped",
+            completionStatus: "failed",
+            error,
+          }),
+        ]);
+        expect(receipts(storePath, ownerless.id)).toEqual([]);
+        expect(execute).not.toHaveBeenCalled();
+      } finally {
+        for (const reservation of reserved) {
+          finishCronRunReceipt({
+            handle: reservation.runReceipt,
+            status: "skipped",
+            finishedAtMs: NOW,
+          });
+        }
       }
-    }
-  });
+    },
+  );
 
   it.each(["automatic", "manual"])(
     "records one durable %s skip without an agent, session, or execution receipt",

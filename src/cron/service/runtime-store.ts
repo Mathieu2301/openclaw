@@ -6,7 +6,7 @@ import {
   deleteCronJobRowInDatabase,
   loadedCronStoreFromRows,
   loadCronRows,
-  upsertCronJobRow,
+  updateCronRuntimeRow,
 } from "../store/row-codec.js";
 import {
   prepareCronRunReceiptWriteSchema,
@@ -85,6 +85,9 @@ export function commitCronRuntimeRows<T>(params: {
         });
       }
       const jobs = new Map(loadedJobs.map((job) => [job.id, job] as const));
+      const previousEnabled = new Map(
+        loadedJobs.map((job) => [job.id, job.enabled ?? true] as const),
+      );
       const mutation = params.mutate({ database: db, jobs, receiptSchema });
       const upsertJobIds = [...new Set(mutation.upsertJobIds ?? [])].toSorted();
       const deleteJobIds = [...new Set(mutation.deleteJobIds ?? [])].toSorted();
@@ -99,7 +102,7 @@ export function commitCronRuntimeRows<T>(params: {
         const row = rowsByJobId.get(jobId);
         const job = jobs.get(jobId);
         if (row && job && !deleteJobIds.includes(jobId)) {
-          upsertCronJobRow(db, storeKey, job, row.sort_order, { knownExistingRow: row });
+          updateCronRuntimeRow(db, storeKey, job, previousEnabled.get(jobId));
         }
       }
       if (runHooks) {

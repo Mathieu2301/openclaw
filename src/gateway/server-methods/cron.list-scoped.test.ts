@@ -4,6 +4,8 @@ import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOperationalRunInstanceRef } from "../../agents/admitted-run-context.js";
+import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import * as listRevision from "../../cron/list-snapshot-revision.js";
 import { CronService } from "../../cron/service.js";
 import { createNoopLogger } from "../../cron/service.test-harness.js";
@@ -38,15 +40,15 @@ function createJobs(count: number): CronJob[] {
   }));
 }
 
-function scopedClient(): GatewayClient {
+function scopedClient(agentId = "ops"): GatewayClient {
   const operationalRunInstance = createOperationalRunInstanceRef("cron-list-scope");
   return {
     connect: {} as GatewayClient["connect"],
     internal: {
       agentRuntimeIdentity: {
         kind: "agentRuntime",
-        agentId: "ops",
-        sessionKey: "agent:ops:main",
+        agentId,
+        sessionKey: `agent:${agentId}:main`,
         operationalRunInstance,
         delegatedAuthority: {
           kind: "local",
@@ -66,6 +68,11 @@ async function withCronStore(
     storePath: string;
     cron: CronService;
   }) => Promise<void>,
+  options: {
+    config?: OpenClawConfig;
+    defaultAgentId?: string;
+    legacyDefaultAgentId?: string;
+  } = {},
 ) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "cron-list-scoped-"));
   try {
@@ -77,7 +84,8 @@ async function withCronStore(
         nowMs: () => Date.now(),
         storePath,
         cronEnabled: true,
-        defaultAgentId: "main",
+        defaultAgentId: options.defaultAgentId ?? "main",
+        legacyDefaultAgentId: options.legacyDefaultAgentId,
         log: createNoopLogger(),
         enqueueSystemEvent: vi.fn(),
         requestHeartbeat: vi.fn(),
@@ -85,17 +93,20 @@ async function withCronStore(
       });
       try {
         // Listing loads the real store without starting the scheduler.
-        await withLocalGatewayRequestScope({ deps: {}, getRuntimeConfig: () => ({}) }, async () => {
-          const context: GatewayRequestContext = {
-            ...expectDefined(
-              getPluginRuntimeGatewayRequestScope()?.context,
-              "local Gateway context",
-            ),
-            cron,
-            cronStorePath: storePath,
-          };
-          await run({ context, storePath, cron });
-        });
+        await withLocalGatewayRequestScope(
+          { deps: {}, getRuntimeConfig: () => options.config ?? {} },
+          async () => {
+            const context: GatewayRequestContext = {
+              ...expectDefined(
+                getPluginRuntimeGatewayRequestScope()?.context,
+                "local Gateway context",
+              ),
+              cron,
+              cronStorePath: storePath,
+            };
+            await run({ context, storePath, cron });
+          },
+        );
       } finally {
         cron.stop();
       }
@@ -147,6 +158,64 @@ async function listScoped(
 }
 
 describe("cron.list scoped SQLite snapshots", () => {
+  it("keeps unrepaired historical jobs outside the ambient agent's reads and mutations", async () => {
+    const config = retainLegacyDefaultAgentId(
+      {
+        agents: {
+          ownership: "explicit",
+          entries: { ops: {}, research: {} },
+          defaults: { systemAgent: { agentId: "research" } },
+        },
+      },
+      "ops",
+    );
+    await withCronStore(
+      0,
+      async ({ context, storePath }) => {
+        const historical = { ...createJobs(1)[0]!, id: "historical", agentId: undefined };
+        const explicit = { ...createJobs(1)[0]!, id: "explicit", agentId: "research" };
+        await saveCronStore(storePath, { version: 1, jobs: [historical, explicit] });
+        const before = await loadCronStore(storePath);
+        const client = scopedClient("research");
+        const page = await listScoped(context, 0, undefined, client);
+        expect(page.total, "An ambient agent must not see historical cron jobs").toBe(1);
+        expect(
+          page.jobs.map((job) => job.id),
+          "An ambient agent must not see historical cron jobs",
+        ).toEqual([explicit.id]);
+        expect((await listScoped(context, 0, undefined, null)).total).toBe(2);
+        expect((await listScoped(context, 0, "agent:research:cron:historical", null)).total).toBe(
+          0,
+        );
+        for (const method of ["cron.get", "cron.runs", "cron.update", "cron.remove"] as const) {
+          const respond = vi.fn();
+          await expectDefined(
+            cronHandlers[method],
+            method,
+          )({
+            req: { type: "req", id: method, method },
+            params: {
+              id: historical.id,
+              ...(method === "cron.update" ? { patch: { name: "changed" } } : {}),
+            },
+            context,
+            client,
+            respond,
+            isWebchatConnect: () => false,
+          });
+          expect(respond).toHaveBeenCalledExactlyOnceWith(
+            false,
+            undefined,
+            expect.objectContaining({
+              details: expect.objectContaining({ code: "CRON_JOB_NOT_FOUND" }),
+            }),
+          );
+          expect(await loadCronStore(storePath)).toEqual(before);
+        }
+      },
+      { config, defaultAgentId: "research", legacyDefaultAgentId: "ops" },
+    );
+  });
   it("prepares one revision for concurrent lists while status does no listing work", async () => {
     await withCronStore(300, async ({ context, cron }) => {
       await cron.start();

@@ -18,7 +18,12 @@ import { runPostPersistCronNotifications } from "./store.js";
 export type QueuedCronRunReservation = { jobId: string; reservationIdentity: object };
 
 function currentDefaultAgentId(state: CronServiceState) {
-  return state.deps.resolveDefaultAgentId?.() ?? state.deps.defaultAgentId;
+  if (state.deps.legacyDefaultAgentId) {
+    return undefined;
+  }
+  return state.deps.resolveDefaultAgentId
+    ? state.deps.resolveDefaultAgentId()
+    : state.deps.defaultAgentId;
 }
 
 /** Callers hold the partition lock through committed publication and execution handoff. */

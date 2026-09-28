@@ -2,12 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it, vi } from "vitest";
+import { retainLegacyDefaultAgentId } from "../../config/legacy.default-agent-owner.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { cronRunLogEntryToDetail, cronRunStorageStatus } from "../../cron/run-history-detail.js";
 import type { CronRunLogEntry } from "../../cron/run-log-types.js";
 import { CronService } from "../../cron/service.js";
 import { createNoopLogger } from "../../cron/service.test-harness.js";
+import { loadCronStore, saveCronStore } from "../../cron/store.js";
 import { cronStoreKey } from "../../cron/store/key.js";
 import { recordCronRunInDatabase } from "../../cron/store/run-history.kernel.js";
 import type { CronRunHistoryWrite } from "../../cron/store/run-history.types.js";
@@ -30,17 +32,27 @@ async function withCronHistory(
     query: (
       params: Record<string, unknown>,
       client?: GatewayClient,
-      method?: "cron.runs" | "cron.list",
+      method?: "cron.runs" | "cron.list" | "cron.get",
     ) => Promise<ReturnType<typeof vi.fn<RespondFn>>>;
     viewer: GatewayClient;
     owner: GatewayClient;
   }) => Promise<void>,
+  options: { legacyDefaultAgentId?: string } = {},
 ) {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const cfg = {
       ...rolePolicyConfig(),
-      agents: { entries: { main: { workspace: state.workspaceDir } } },
+      agents: {
+        entries: {
+          main: { workspace: state.workspaceDir },
+          ...(options.legacyDefaultAgentId ? { [options.legacyDefaultAgentId]: {} } : {}),
+        },
+        ...(options.legacyDefaultAgentId
+          ? { ownership: "explicit" as const, defaults: { systemAgent: { agentId: "main" } } }
+          : {}),
+      },
     };
+    retainLegacyDefaultAgentId(cfg, options.legacyDefaultAgentId);
     await state.writeConfig(cfg);
     const owner = roleClient("none", "history-owner");
     const foreign = roleClient("none", "history-foreign");
@@ -70,6 +82,7 @@ async function withCronHistory(
       nowMs: () => Date.now(),
       storePath,
       defaultAgentId: "main",
+      legacyDefaultAgentId: options.legacyDefaultAgentId,
       cronEnabled: false,
       log: createNoopLogger(),
       enqueueSystemEvent: vi.fn(),
@@ -140,7 +153,7 @@ async function withCronHistory(
       const query = async (
         params: Record<string, unknown>,
         client = owner,
-        method: "cron.runs" | "cron.list" = "cron.runs",
+        method: "cron.runs" | "cron.list" | "cron.get" = "cron.runs",
       ) => {
         const respond = vi.fn<RespondFn>();
         await expectDefined(
@@ -164,6 +177,55 @@ async function withCronHistory(
 }
 
 describe("cron.runs session visibility", () => {
+  it.each(["main", "session:custom-target"] as const)(
+    "preserves the explicit session owner when visibility targets %s during legacy repair",
+    async (sessionTarget) => {
+      await withCronHistory(
+        async ({ cron, query, jobId, storePath, owner }) => {
+          const store = await loadCronStore(storePath);
+          const job = expectDefined(
+            store.jobs.find((entry) => entry.id === jobId),
+            "fixture job",
+          );
+          job.sessionKey = expectDefined(job.owner?.sessionKey, "authored session owner");
+          delete job.agentId;
+          delete job.owner;
+          job.sessionTarget = sessionTarget;
+          if (sessionTarget === "main") {
+            job.payload = { kind: "systemEvent", text: "visibility fixture" };
+          }
+          await saveCronStore(storePath, store);
+          const targetKey = sessionTarget === "main" ? "main" : "custom-target";
+          await upsertSessionEntryCore(
+            { agentId: "main", sessionKey: targetKey },
+            {
+              sessionId: `visibility-${targetKey}`,
+              updatedAt: Date.now(),
+              createdActor: {
+                type: "human",
+                source: "profile",
+                id: expectDefined(owner.authenticatedUserProfile, "fixture profile").profileId,
+              },
+            },
+          );
+          expect(await cron.readJob(jobId)).toMatchObject({
+            sessionKey: job.sessionKey,
+            sessionTarget,
+          });
+          for (const method of ["cron.get", "cron.runs"] as const) {
+            expect(
+              await query({ id: jobId }, owner, method),
+              "An explicit session owner must remain visible",
+            ).toHaveBeenCalledWith(true, expect.any(Object), undefined);
+            expect(
+              await query({ id: jobId }, roleClient("none", "visibility-foreign"), method),
+            ).toHaveBeenCalledWith(false, undefined, expect.any(Object));
+          }
+        },
+        { legacyDefaultAgentId: "ops" },
+      );
+    },
+  );
   it.each(["cron.list", "cron.runs"] as const)(
     "%s filters jobs before preparing unavailable foreign sessions",
     async (method) => {

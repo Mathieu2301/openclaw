@@ -46,11 +46,20 @@ import type { CronServiceState } from "./state.js";
 import { runsDetachedFromMainSession } from "./timer-execution-timeout.js";
 
 function currentDefaultAgentId(state: CronServiceState): string | undefined {
-  return state.deps.resolveDefaultAgentId?.() ?? state.deps.defaultAgentId;
+  if (state.deps.legacyDefaultAgentId) {
+    return undefined;
+  }
+  return state.deps.resolveDefaultAgentId
+    ? state.deps.resolveDefaultAgentId()
+    : state.deps.defaultAgentId;
 }
 
 function resolveCronRunReceiptAgentId(state: CronServiceState, job: CronJob): string {
-  return resolveCronJobEffectiveAgentId(job, currentDefaultAgentId(state));
+  return resolveCronJobEffectiveAgentId(
+    job,
+    currentDefaultAgentId(state),
+    state.deps.legacyDefaultAgentId,
+  );
 }
 
 function resolveAgentId(state: CronServiceState) {

@@ -15,8 +15,9 @@ import type { IsolatedAgentSetupTimeoutSignal } from "./timer.js";
 export function resolveEffectiveJobAgentId(
   job: { agentId?: string | null; sessionKey?: string | null },
   defaultAgentId: string | undefined,
+  legacyDefaultAgentId?: string,
 ): string {
-  return resolveCronJobEffectiveAgentId(job, defaultAgentId);
+  return resolveCronJobEffectiveAgentId(job, defaultAgentId, legacyDefaultAgentId);
 }
 
 export function markManualCronJobActive(

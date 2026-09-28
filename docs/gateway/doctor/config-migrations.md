@@ -9,6 +9,27 @@ read_when:
 Checks 0-2 cover config normalization and the legacy config key migrations,
 plus how doctor publishes shared-state schema during an update.
 
+## Cron ownership before roster migration
+
+Before retiring a legacy agent roster's default marker, Doctor pins ownerless
+cron jobs to that historical agent. This also applies when a different system
+agent is selected. Explicit job owners and agent-qualified session keys remain
+unchanged. Doctor saves a verified SQLite backup and rechecks the stored owner
+and definition before committing. If ownership cannot be repaired, it preserves
+the roster marker and reports the condition to resolve.
+
+An owner recorded only in the SQLite owner column is copied into the job's
+canonical definition by Doctor. Its agent identity and runtime state stay the
+same; a different system-agent selection does not override it.
+
+Ordinary config writes do not repair cron ownership. A roster change that would
+lose the historical owner is refused with `openclaw doctor --fix` guidance.
+Run Doctor before updating or removing an unresolved historical job. Agent-scoped
+management does not inherit these jobs from the currently selected system agent;
+operators can still inspect them. Deleting another agent leaves their rows intact.
+The normal `openclaw update` Doctor phase performs this repair before saving
+the migrated config, including its early preflight and include-recovery writes.
+
 ## Channel ownership during an update
 
 When Doctor migrates a legacy `agents.list` roster without a `default: true` marker

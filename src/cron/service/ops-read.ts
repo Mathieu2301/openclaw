@@ -374,8 +374,11 @@ export async function listPage(
             }
             if (
               requestedAgentId &&
-              tryResolveCronJobEffectiveAgentId(job, resolveCurrentDefaultAgentId(state)) !==
-                requestedAgentId
+              tryResolveCronJobEffectiveAgentId(
+                job,
+                resolveCurrentDefaultAgentId(state),
+                state.deps.legacyDefaultAgentId,
+              ) !== requestedAgentId
             ) {
               return false;
             }

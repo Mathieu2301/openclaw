@@ -240,8 +240,8 @@ export function prepareConfigWriteTopology(
       options.persistCanonicalAgentRoster === true || persistOwnership || stampOwnership,
     preserveLegacyAgentRoster: Boolean(retainedLegacyDefaultAgentId) && !writesOwnershipTopology,
     cronOwner: persistOwnership
-      ? retainedFleetOwner
-        ? { provenOwnerAgentId: retainedFleetOwner }
+      ? retainedLegacyDefaultAgentId
+        ? { provenOwnerAgentId: retainedLegacyDefaultAgentId }
         : {}
       : undefined,
   };

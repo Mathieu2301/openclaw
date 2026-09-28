@@ -60,6 +60,7 @@ candidate_version=2026.9.6
 candidate_install_mode=updater
 baseline_version=2026.9.6
 UPDATE_RESTART_MODE=manual
+native_assignment_enabled=0
 export OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT="$ARTIFACT_ROOT"
 export OPENCLAW_UPGRADE_SURVIVOR_RUNTIME_ROOT="$RUNTIME_ROOT"
 package_root() { printf '%s\\n' "$UNIT_ROOT/installed"; }
