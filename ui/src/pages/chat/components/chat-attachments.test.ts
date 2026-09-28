@@ -41,7 +41,7 @@ it("counts restored payload bytes when size metadata is absent or invalid", () =
     {
       id: "invalid",
       mimeType: "text/plain",
-      sizeBytes: NaN,
+      sizeBytes: Number.NaN,
       dataUrl: "data:text/plain;base64,YQ==",
     },
     {
