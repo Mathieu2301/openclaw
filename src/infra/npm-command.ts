@@ -4,7 +4,7 @@ import path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-export class BundledNpmCliNotFoundError extends Error {
+class BundledNpmCliNotFoundError extends Error {
   readonly code = "BUNDLED_NPM_CLI_NOT_FOUND";
 
   constructor(cliPath: string, cause?: unknown) {

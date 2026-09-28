@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BundledNpmCliNotFoundError, resolveNpmCommand } from "./npm-command.js";
+import { resolveNpmCommand } from "./npm-command.js";
 
 const cliPath = path.join(
   path.dirname(createRequire(import.meta.url).resolve("npm/package.json")),
@@ -44,7 +44,13 @@ describe("npm invocation", () => {
     vi.spyOn(fs, "statSync").mockImplementation(() => {
       throw Object.assign(new Error("missing"), { code: "ENOENT" });
     });
-    expect(() => resolveNpmCommand(["install"])).toThrow(BundledNpmCliNotFoundError);
+    expect(() => resolveNpmCommand(["install"])).toThrow(
+      expect.objectContaining({
+        name: "BundledNpmCliNotFoundError",
+        code: "BUNDLED_NPM_CLI_NOT_FOUND",
+        cause: expect.objectContaining({ code: "ENOENT" }),
+      }),
+    );
     expect(() => resolveNpmCommand(["install"])).toThrow(cliPath);
   });
 });
