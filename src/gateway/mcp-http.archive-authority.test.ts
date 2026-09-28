@@ -137,7 +137,7 @@ describe("MCP HTTP session archive authority", () => {
       });
       expect(resolveTools).toHaveBeenCalledTimes(1);
       expect(resolveTools.mock.calls[0]?.[0]).toMatchObject({ sessionKey, senderIsOwner: false });
-      expect(resolveTools.mock.calls[0]?.[0].sessionArchiveAuthority).toBe(operatorAuthority);
+      expect(resolveTools.mock.calls[0]?.[0].sessionControlAuthority).toBe(operatorAuthority);
       expect(execute).not.toHaveBeenCalled();
 
       expect(await sendRequest(grant.token, "tools/call", headers)).toMatchObject({
@@ -177,7 +177,7 @@ describe("MCP HTTP session archive authority", () => {
           sessionKey: attachGrant?.sessionKey ?? "agent:main:archive-authority-spoofed",
           senderIsOwner: kind === "owner",
         });
-        expect(resolveTools.mock.calls[0]?.[0].sessionArchiveAuthority).toBeUndefined();
+        expect(resolveTools.mock.calls[0]?.[0].sessionControlAuthority).toBeUndefined();
 
         expect(await sendRequest(token, "tools/call")).toMatchObject({
           result: { ...completed, isError: false },

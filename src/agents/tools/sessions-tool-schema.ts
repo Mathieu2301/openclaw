@@ -11,6 +11,7 @@ import { stringEnum } from "../schema/typebox.js";
 const ACTIONS = [
   "cloud_profiles",
   "patch",
+  "stop",
   "reset",
   "delete",
   "assign_owner",
@@ -56,6 +57,15 @@ export const SessionsToolSchema = Type.Object(
       Type.String({
         description:
           "Durable identity returned by sessions_list; rejects a replaced session. Required for archive, restore, or delete of another session.",
+      }),
+    ),
+    runId: Type.Optional(
+      Type.String({ description: "stop: cancel this exact active run, if specified." }),
+    ),
+    clearQueued: Type.Optional(
+      Type.Boolean({
+        description:
+          "stop: also clear queued follow-ups for session-wide stop. Default true; unavailable with runId.",
       }),
     ),
     deleteTranscript: Type.Optional(
@@ -131,13 +141,18 @@ export const SessionsToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SessionArchiveToolSchema = Type.Object(
+export const SessionControlToolSchema = Type.Object(
   {
-    action: stringEnum(["patch"]),
+    action: stringEnum(["patch", "stop"]),
     sessionKey: SessionsToolSchema.properties.sessionKey,
-    targets: SessionsToolSchema.properties.targets,
     expectedSessionId: SessionsToolSchema.properties.expectedSessionId,
-    archived: Type.Boolean({ description: "True archives without deleting; false restores." }),
+    archived: Type.Optional(
+      Type.Boolean({
+        description: "patch: required; true archives without deleting, false restores.",
+      }),
+    ),
+    runId: SessionsToolSchema.properties.runId,
+    clearQueued: SessionsToolSchema.properties.clearQueued,
   },
   { additionalProperties: false },
 );

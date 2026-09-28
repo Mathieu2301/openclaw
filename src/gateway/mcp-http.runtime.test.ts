@@ -308,7 +308,7 @@ describe("resolveMcpLoopbackScopedTools", () => {
 });
 
 describe("McpLoopbackToolCache", () => {
-  it.each(["operator.write", "operator.sessions.write"])(
+  it.each(["operator.write", "operator.admin"])(
     "does not let a source-less cached list hide a later non-owner writer (%s)",
     async (scope) => {
       const cache = new McpLoopbackToolCache();
@@ -319,25 +319,35 @@ describe("McpLoopbackToolCache", () => {
         assertCurrent: () => {},
       });
       resolveGatewayScopedTools.mockImplementation(
-        ({ sessionArchiveAuthority }: Pick<ScopeParams, "sessionArchiveAuthority">) =>
-          scopedToolFixture(sessionArchiveAuthority === authority ? ["sessions"] : []),
+        ({ sessionControlAuthority }: Pick<ScopeParams, "sessionControlAuthority">) =>
+          scopedToolFixture(sessionControlAuthority === authority ? ["sessions"] : []),
       );
 
       const withoutSource = await cache.resolve(params);
       expect(withoutSource.toolSchema).toEqual([]);
-      const writerParams = { ...params, sessionArchiveAuthority: authority };
+      const writerParams = { ...params, sessionControlAuthority: authority };
       const withSource = await cache.resolve(writerParams);
       expect(withSource.toolSchema.map((tool) => tool.name)).toEqual(["sessions"]);
-      expect(resolveGatewayScopedTools.mock.calls[1]?.[0].sessionArchiveAuthority).toBe(authority);
+      expect(resolveGatewayScopedTools.mock.calls[1]?.[0].sessionControlAuthority).toBe(authority);
       expect(resolveGatewayScopedTools.mock.calls[1]?.[0].senderIsOwner).toBe(false);
       expect(await cache.resolve(writerParams)).toBe(withSource);
       expect(await cache.resolve(params)).toBe(withoutSource);
       expect(
         await cache.resolve({
           ...params,
-          sessionArchiveAuthority: createAdmittedRunOperatorAuthority({
+          sessionControlAuthority: createAdmittedRunOperatorAuthority({
             profileId: "archive-reader",
             scopes: ["operator.read"],
+            assertCurrent: () => {},
+          }),
+        }),
+      ).toBe(withoutSource);
+      expect(
+        await cache.resolve({
+          ...params,
+          sessionControlAuthority: createAdmittedRunOperatorAuthority({
+            profileId: "narrow-writer",
+            scopes: ["operator.sessions.write"],
             assertCurrent: () => {},
           }),
         }),
@@ -351,13 +361,13 @@ describe("McpLoopbackToolCache", () => {
     const controller = new AbortController();
     const authority = createAdmittedRunOperatorAuthority({
       profileId: "archive-writer",
-      scopes: ["operator.sessions.write"],
+      scopes: ["operator.write"],
       signal: controller.signal,
       assertCurrent: () => {},
     });
     const params = {
       ...scopeParams({ toolsAllow: ["sessions"], grantToken: "archive-grant" }),
-      sessionArchiveAuthority: authority,
+      sessionControlAuthority: authority,
     };
     resolveGatewayScopedTools.mockReturnValue(scopedToolFixture(["sessions"]));
 
@@ -365,7 +375,7 @@ describe("McpLoopbackToolCache", () => {
     expect(cached.toolSchema.map((tool) => tool.name)).toEqual(["sessions"]);
     expect(await cache.resolve(params)).toBe(cached);
     await expect(
-      cache.resolve({ ...params, sessionArchiveAuthority: { ...authority } }),
+      cache.resolve({ ...params, sessionControlAuthority: { ...authority } }),
     ).rejects.toThrow("operator run authority must be issued by the host");
 
     const reason = new Error("archive operator source revoked");

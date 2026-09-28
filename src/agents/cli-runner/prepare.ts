@@ -1063,7 +1063,7 @@ async function prepareCliRunContextWithinReadFence(
               requestedLoopbackToolsAllow !== undefined
                 ? { ...mcpContextBase, toolsAllow: [...requestedLoopbackToolsAllow] }
                 : mcpContextBase,
-            sessionArchiveAuthority: readRunOperatorAuthority(params),
+            sessionControlAuthority: readRunOperatorAuthority(params),
             rootedExecution,
             ...(skillLibraryAuthoring ? { skillLibraryAuthoring } : {}),
             ...(mcpToolAuth ? { authProfileStore: mcpToolAuth.store } : {}),

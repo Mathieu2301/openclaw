@@ -3,10 +3,17 @@ import { expectDefined } from "@openclaw/normalization-core/expect";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createOpenClawCodingTools } from "../agents/agent-tools.js";
+import {
+  setActiveEmbeddedRun,
+  clearActiveEmbeddedRun,
+  type EmbeddedAgentQueueHandle,
+} from "../agents/embedded-agent-runner/runs.js";
+import { withGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
 import { createSessionsTool } from "../agents/tools/sessions-tool.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { loadSessionEntry, upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
+import { assignSessionOwner } from "../config/sessions/session-accessor.sqlite-owner.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { LegacyPluginSdkResourceHost } from "../plugins/legacy-sdk-resource-host.js";
 import {
@@ -16,6 +23,7 @@ import {
 import { beginSessionWorkAdmission } from "../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import { registerChatAbortController } from "./chat-abort.js";
 import { withLocalGatewayRequestScope } from "./local-request-context.js";
 import { withOperatorToolGatewayAuthority } from "./server-plugin-in-process-dispatch.js";
 import { roleClient, rolePolicyConfig } from "./session-sharing.test-utils.js";
@@ -65,7 +73,7 @@ function withSessionToolsFixture(run: (cfg: OpenClawConfig) => Promise<void>) {
 }
 
 describe("scoped session archive tools", () => {
-  it.each(["unbound", "reader"] as const)(
+  it.each(["unbound", "reader", "session-writer"] as const)(
     "does not expose archive to a %s caller",
     async (caller) => {
       await withSessionToolsFixture(async (cfg) => {
@@ -88,7 +96,7 @@ describe("scoped session archive tools", () => {
               config: cfg,
               agentSessionKey: TARGET,
               agentSessionId: TARGET_ID,
-              archiveOnly: true,
+              controlOnly: true,
             }).execute("no-write-grant", {
               action: "patch",
               archived: true,
@@ -99,14 +107,15 @@ describe("scoped session archive tools", () => {
           await check();
         } else {
           const client = roleClient("view");
-          client.connect.scopes = ["operator.read"];
+          const scope = caller === "session-writer" ? "operator.sessions.write" : "operator.read";
+          client.connect.scopes = [scope];
           await withPluginRuntimeGatewayRequestScope(
             { ...getPluginRuntimeGatewayRequestScope(), client, isWebchatConnect: () => false },
             () =>
               withOperatorToolGatewayAuthority(
                 {
                   authenticatedUserProfile: client.authenticatedUserProfile,
-                  scopes: ["operator.read"],
+                  scopes: [scope],
                 },
                 check,
               ),
@@ -119,136 +128,397 @@ describe("scoped session archive tools", () => {
     },
   );
 
-  it.each(["operator.write", "operator.sessions.write"])(
-    "exposes requester-scoped self-archive through the assembled tool surface (%s)",
-    async (scope) => {
+  it.each(["unassigned archive", "ordinary stop"] as const)(
+    "enforces the requested ordinary-session contract: %s",
+    async (scenario) => {
+      await withSessionToolsFixture(async (cfg) => {
+        const client = roleClient("write");
+        const request = getPluginRuntimeGatewayRequestScope();
+        if (!request) {
+          throw new Error("expected local Gateway scope");
+        }
+        await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
+          withOperatorToolGatewayAuthority(
+            {
+              authenticatedUserProfile: client.authenticatedUserProfile,
+              scopes: ["operator.write"],
+            },
+            async () => {
+              const tool = expectDefined(
+                createOpenClawCodingTools({
+                  config: cfg,
+                  agentId: "main",
+                  sessionKey: TARGET,
+                  sessionId: TARGET_ID,
+                  senderIsOwner: false,
+                }).find((candidate) => candidate.name === "sessions"),
+                "session control tool",
+              );
+              if (scenario === "ordinary stop") {
+                expect(tool.parameters).toMatchObject({
+                  properties: { action: { enum: expect.arrayContaining(["stop"]) } },
+                });
+                return;
+              }
+              await expect(
+                tool.execute("foreign-archive", {
+                  action: "patch",
+                  sessionKey: TARGET,
+                  expectedSessionId: TARGET_ID,
+                  archived: true,
+                }),
+              ).rejects.toThrow(/owner|assigned|own session/i);
+            },
+          ),
+        );
+      });
+    },
+  );
+
+  it.each(["creator", "assignee", "unrelated", "replacement"] as const)(
+    "stops only the authorized ordinary-session run (%s)",
+    async (relationship) => {
       await withSessionToolsFixture(async (cfg) => {
         const request = getPluginRuntimeGatewayRequestScope();
         if (!request?.context) {
           throw new Error("expected local Gateway context");
         }
         const client = roleClient("write");
-        client.connect.scopes = [scope];
         const profile = expectDefined(client.authenticatedUserProfile, "operator profile");
-        const sessionKey = "agent:main:dashboard:operator-archive";
-        const sessionId = "operator-archive-id";
+        const requesterKey = "agent:main:dashboard:stop-requester";
+        const targetKey =
+          relationship === "creator" ? "agent:main:dashboard:created-stop-target" : TARGET;
         await upsertSessionEntryCore(
-          { agentId: "main", sessionKey },
+          { agentId: "main", sessionKey: requesterKey },
           {
-            sessionId,
+            sessionId: "stop-requester-id",
             updatedAt: 1,
             createdActor: { type: "human", source: "profile", id: profile.profileId },
           },
         );
-        await upsertSessionEntryCore(
-          { agentId: "main", sessionKey: TARGET },
-          { owner: { actor: { type: "human", id: profile.profileId } } },
-        );
-        const archived = createDeferredCore();
-        request.context.subscribeSessionEvents("operator-archive-proof");
-        request.context.broadcastToConnIds = (event, payload) => {
-          if (
-            event === "sessions.changed" &&
-            isRecord(payload) &&
-            payload.sessionKey === sessionKey
-          ) {
-            archived.resolve();
-          }
-        };
-        const admission = await beginSessionWorkAdmission({
-          scope: resolveSessionStorePathCore(cfg.session?.store, { agentId: "main" }),
-          identities: [sessionKey, sessionId],
-          assertAllowed: () => {},
+        if (relationship === "creator") {
+          await upsertSessionEntryCore(
+            { agentId: "main", sessionKey: targetKey },
+            {
+              sessionId: TARGET_ID,
+              updatedAt: 1,
+              createdActor: { type: "human", source: "profile", id: profile.profileId },
+            },
+          );
+        } else if (relationship !== "unrelated") {
+          assignSessionOwner(
+            { agentId: "main", sessionKey: TARGET },
+            {
+              owner: { type: "human", id: profile.profileId },
+              assignedBy: { type: "human", id: profile.profileId },
+            },
+          );
+        }
+        const run = registerChatAbortController({
+          chatAbortControllers: request.context.chatAbortControllers,
+          runId: "ordinary-stop-run",
+          sessionKey: targetKey,
+          sessionId: TARGET_ID,
+          agentId: "main",
+          timeoutMs: 60_000,
         });
-        let retained: ReturnType<typeof createSessionsTool> | undefined;
+        run.controller.signal.addEventListener("abort", () => run.cleanup(), { once: true });
         try {
-          const result = await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
+          await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
             withOperatorToolGatewayAuthority(
-              { authenticatedUserProfile: profile, scopes: [scope] },
+              { authenticatedUserProfile: profile, scopes: ["operator.write"] },
               async () => {
-                const options = {
-                  config: cfg,
-                  agentId: "main",
-                  sessionKey,
-                  sessionId,
-                  senderIsOwner: false,
-                };
-                const tools = createOpenClawCodingTools(options);
-                const gatewayTools = resolveGatewayScopedTools({
-                  ...options,
-                  cfg,
-                  surface: "loopback",
-                }).tools;
-                for (const surface of [tools, gatewayTools]) {
-                  const tool = expectDefined(
-                    surface.find((candidate) => candidate.name === "sessions"),
-                    "session writer archive tool",
-                  );
-                  expect(tool.parameters).toMatchObject({
-                    properties: { action: { enum: ["patch"] }, archived: { type: "boolean" } },
-                    required: ["action", "archived"],
-                  });
-                  await expect(
-                    tool.execute("not-archive", { action: "reset", sessionKey: TARGET }),
-                  ).rejects.toThrow(/archive|restore/i);
-                  await expect(
-                    tool.execute("not-settings", {
-                      action: "patch",
-                      archived: true,
-                      model: "other",
-                    }),
-                  ).rejects.toThrow(/archive|restore/i);
-                }
                 const tool = expectDefined(
-                  tools.find((candidate) => candidate.name === "sessions"),
-                  "archive tool",
+                  createOpenClawCodingTools({
+                    config: cfg,
+                    agentId: "main",
+                    sessionKey: requesterKey,
+                    sessionId: "stop-requester-id",
+                    senderIsOwner: false,
+                  }).find((candidate) => candidate.name === "sessions"),
+                  "session controls",
                 );
-                retained = tool;
-                const archiveAssigned = (value: boolean) =>
-                  tool.execute("archive-assigned", {
-                    action: "patch",
-                    sessionKey: TARGET,
-                    expectedSessionId: TARGET_ID,
-                    archived: value,
-                  });
-                if (scope === "operator.write") {
-                  await archiveAssigned(true);
-                  expect(
-                    loadSessionEntry({ agentId: "main", sessionKey: TARGET })?.archivedAt,
-                  ).toEqual(expect.any(Number));
-                  await archiveAssigned(false);
+                const stop = withGatewayToolCallerIdentity(
+                  {
+                    agentId: "main",
+                    sessionKey: requesterKey,
+                    operationalRunInstance: {
+                      instanceId: "stop-tool-instance",
+                      runId: "stop-tool-run",
+                    },
+                    receiptAuthority: () => true,
+                    gatewayContextResolver: () => request.context,
+                  },
+                  () =>
+                    tool.execute("stop-ordinary", {
+                      action: "stop",
+                      sessionKey: targetKey,
+                      runId: "ordinary-stop-run",
+                      expectedSessionId:
+                        relationship === "replacement" ? "old-session-id" : TARGET_ID,
+                    }),
+                );
+                if (relationship === "unrelated" || relationship === "replacement") {
+                  await expect(stop).rejects.toThrow(/creator|assigned|changed/i);
                 } else {
-                  // Display assignment is not a creator grant for session-only writers.
-                  await expect(archiveAssigned(true)).rejects.toThrow(
-                    /own|denied|not found|scope/i,
-                  );
+                  const result = await stop;
+                  expect(result.details).toMatchObject({ ok: true });
                 }
-                expect(
-                  loadSessionEntry({ agentId: "main", sessionKey: TARGET })?.archivedAt,
-                ).toBeUndefined();
-                return await admission.run(() =>
-                  tool.execute("archive-own-session", { action: "patch", archived: true }),
-                );
               },
             ),
           );
-          expect(result.details).toMatchObject({ status: "scheduled", sessionKey });
-          expect(loadSessionEntry({ agentId: "main", sessionKey })?.archivedAt).toBeUndefined();
+          expect(run.controller.signal.aborted).toBe(
+            relationship === "creator" || relationship === "assignee",
+          );
         } finally {
-          admission.release();
+          run.cleanup();
         }
-        await archived.promise;
-        expect(loadSessionEntry({ agentId: "main", sessionKey })).toMatchObject({
-          sessionId,
-          archivedAt: expect.any(Number),
-        });
-        await expect(
-          expectDefined(retained, "retained archive tool").execute("expired-restore", {
-            action: "patch",
-            archived: false,
-          }),
-        ).rejects.toThrow(/current operator write grant/);
       });
     },
   );
+
+  it.each(["assigned", "unrelated", "reassigned", "access-revoked", "unconfirmed"] as const)(
+    "keeps ordinary active-run steering caller-bound (%s)",
+    async (scenario) => {
+      await withSessionToolsFixture(async (cfg) => {
+        const request = getPluginRuntimeGatewayRequestScope();
+        if (!request?.context) {
+          throw new Error("expected local Gateway context");
+        }
+        const client = roleClient("write");
+        const profile = expectDefined(client.authenticatedUserProfile, "operator profile");
+        const requesterKey = "agent:main:dashboard:steer-requester";
+        await upsertSessionEntryCore(
+          { agentId: "main", sessionKey: requesterKey },
+          {
+            sessionId: "steer-requester-id",
+            updatedAt: 1,
+            createdActor: { type: "human", source: "profile", id: profile.profileId },
+          },
+        );
+        if (scenario !== "unrelated") {
+          assignSessionOwner(
+            { agentId: "main", sessionKey: TARGET },
+            {
+              owner: { type: "human", id: profile.profileId },
+              assignedBy: { type: "human", id: profile.profileId },
+            },
+          );
+        }
+        const accepted = vi.fn();
+        const legacyQueue = vi.fn(async () => {
+          throw new Error("unguarded steering must not run");
+        });
+        const handle: EmbeddedAgentQueueHandle = {
+          runId: "ordinary-steer-run",
+          queueMessage: legacyQueue,
+          isStreaming: () => true,
+          isCompacting: () => false,
+          supportsTranscriptCommitWait: true,
+          sourceReplyDeliveryMode: "automatic",
+          abort: () => {},
+          messageInjectionV2: {
+            version: 2,
+            isAvailable: () => true,
+            queueMessage: async (_text, _options, assertCurrent) => {
+              if (scenario === "reassigned") {
+                assignSessionOwner(
+                  { agentId: "main", sessionKey: TARGET },
+                  {
+                    owner: { type: "human", id: "another-owner" },
+                    assignedBy: { type: "human", id: profile.profileId },
+                  },
+                );
+              }
+              if (scenario === "access-revoked") {
+                await upsertSessionEntryCore(
+                  { agentId: "main", sessionKey: TARGET },
+                  { visibility: "draft" },
+                );
+              }
+              assertCurrent();
+              accepted();
+              return scenario === "unconfirmed"
+                ? { transcriptCommit: "unconfirmed", errorMessage: "test receipt unavailable" }
+                : undefined;
+            },
+          },
+        };
+        setActiveEmbeddedRun(TARGET_ID, handle, TARGET, undefined, "main");
+        try {
+          await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
+            withOperatorToolGatewayAuthority(
+              { authenticatedUserProfile: profile, scopes: ["operator.write"] },
+              async () => {
+                const tool = expectDefined(
+                  createOpenClawCodingTools({
+                    config: cfg,
+                    agentId: "main",
+                    sessionKey: requesterKey,
+                    sessionId: "steer-requester-id",
+                    senderIsOwner: false,
+                  }).find((candidate) => candidate.name === "sessions_send"),
+                  "session steering",
+                );
+                const result = await tool.execute("steer-ordinary", {
+                  mode: "steer",
+                  sessionKey: TARGET,
+                  message: "Use the updated requirements",
+                  timeoutSeconds: 0,
+                });
+                if (scenario === "assigned") {
+                  expect(result.details, JSON.stringify(result.details)).toMatchObject({
+                    status: "accepted",
+                    targetDisposition: "steered",
+                  });
+                } else if (scenario === "unconfirmed") {
+                  expect(result.details).toMatchObject({ status: "error", sentBeforeError: true });
+                } else {
+                  expect(result.details).toMatchObject({
+                    status: expect.stringMatching(/error|forbidden/),
+                  });
+                }
+              },
+            ),
+          );
+          expect(accepted).toHaveBeenCalledTimes(
+            scenario === "assigned" || scenario === "unconfirmed" ? 1 : 0,
+          );
+          expect(legacyQueue).not.toHaveBeenCalled();
+        } finally {
+          clearActiveEmbeddedRun(TARGET_ID, handle);
+        }
+      });
+    },
+  );
+
+  it("exposes owner and assignee self-archive for operator.write through the assembled tool surface", async () => {
+    const scope = "operator.write";
+    await withSessionToolsFixture(async (cfg) => {
+      const request = getPluginRuntimeGatewayRequestScope();
+      if (!request?.context) {
+        throw new Error("expected local Gateway context");
+      }
+      const client = roleClient("write");
+      client.connect.scopes = [scope];
+      const profile = expectDefined(client.authenticatedUserProfile, "operator profile");
+      const sessionKey = "agent:main:dashboard:operator-archive";
+      const sessionId = "operator-archive-id";
+      await upsertSessionEntryCore(
+        { agentId: "main", sessionKey },
+        {
+          sessionId,
+          updatedAt: 1,
+          createdActor: { type: "human", source: "profile", id: profile.profileId },
+        },
+      );
+      assignSessionOwner(
+        { agentId: "main", sessionKey: TARGET },
+        {
+          owner: { type: "human", id: profile.profileId },
+          assignedBy: { type: "human", id: profile.profileId },
+        },
+      );
+      const archived = createDeferredCore();
+      request.context.subscribeSessionEvents("operator-archive-proof");
+      request.context.broadcastToConnIds = (event, payload) => {
+        if (
+          event === "sessions.changed" &&
+          isRecord(payload) &&
+          payload.sessionKey === sessionKey
+        ) {
+          archived.resolve();
+        }
+      };
+      const admission = await beginSessionWorkAdmission({
+        scope: resolveSessionStorePathCore(cfg.session?.store, { agentId: "main" }),
+        identities: [sessionKey, sessionId],
+        assertAllowed: () => {},
+      });
+      let retained: ReturnType<typeof createSessionsTool> | undefined;
+      try {
+        const result = await withPluginRuntimeGatewayRequestScope({ ...request, client }, () =>
+          withOperatorToolGatewayAuthority(
+            { authenticatedUserProfile: profile, scopes: [scope] },
+            async () => {
+              const options = {
+                config: cfg,
+                agentId: "main",
+                sessionKey,
+                sessionId,
+                senderIsOwner: false,
+              };
+              const tools = createOpenClawCodingTools(options);
+              const gatewayTools = resolveGatewayScopedTools({
+                ...options,
+                cfg,
+                surface: "loopback",
+              }).tools;
+              for (const surface of [tools, gatewayTools]) {
+                const tool = expectDefined(
+                  surface.find((candidate) => candidate.name === "sessions"),
+                  "session writer archive tool",
+                );
+                expect(tool.parameters).toMatchObject({
+                  properties: {
+                    action: { enum: ["patch", "stop"] },
+                    archived: { type: "boolean" },
+                  },
+                  required: ["action"],
+                });
+                await expect(
+                  tool.execute("not-archive", { action: "reset", sessionKey: TARGET }),
+                ).rejects.toThrow(/archive|restore/i);
+                await expect(
+                  tool.execute("not-settings", {
+                    action: "patch",
+                    archived: true,
+                    model: "other",
+                  }),
+                ).rejects.toThrow(/archive|restore/i);
+              }
+              const tool = expectDefined(
+                tools.find((candidate) => candidate.name === "sessions"),
+                "archive tool",
+              );
+              retained = tool;
+              const archiveAssigned = (value: boolean) =>
+                tool.execute("archive-assigned", {
+                  action: "patch",
+                  sessionKey: TARGET,
+                  expectedSessionId: TARGET_ID,
+                  archived: value,
+                });
+              await archiveAssigned(true);
+              expect(loadSessionEntry({ agentId: "main", sessionKey: TARGET })?.archivedAt).toEqual(
+                expect.any(Number),
+              );
+              await archiveAssigned(false);
+              expect(
+                loadSessionEntry({ agentId: "main", sessionKey: TARGET })?.archivedAt,
+              ).toBeUndefined();
+              return await admission.run(() =>
+                tool.execute("archive-own-session", { action: "patch", archived: true }),
+              );
+            },
+          ),
+        );
+        expect(result.details).toMatchObject({ status: "scheduled", sessionKey });
+        expect(loadSessionEntry({ agentId: "main", sessionKey })?.archivedAt).toBeUndefined();
+      } finally {
+        admission.release();
+      }
+      await archived.promise;
+      expect(loadSessionEntry({ agentId: "main", sessionKey })).toMatchObject({
+        sessionId,
+        archivedAt: expect.any(Number),
+      });
+      await expect(
+        expectDefined(retained, "retained archive tool").execute("expired-restore", {
+          action: "patch",
+          archived: false,
+        }),
+      ).rejects.toThrow(/current operator write grant/);
+    });
+  });
 });

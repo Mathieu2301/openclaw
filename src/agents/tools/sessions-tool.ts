@@ -35,16 +35,22 @@ import {
   resolveSessionToolAccess,
   runSessionToolActionWithConflictReceipt,
 } from "./sessions-access.js";
-import { hasSessionArchiveAuthority } from "./sessions-archive-authority.js";
 import { listSessionCloudProfiles } from "./sessions-cloud-profiles.js";
+import { hasSessionControlAuthority } from "./sessions-control-authority.js";
 import { resolveSessionToolContext } from "./sessions-helpers.js";
 import { resolveSessionReference, shouldResolveSessionIdInput } from "./sessions-resolution.js";
+import {
+  callSessionToolControl,
+  captureSessionStopCaller,
+  prepareSessionToolControlTarget,
+  stopSessionTool,
+} from "./sessions-tool-control.js";
 import {
   readSessionsToolPatch,
   runSessionsToolPatchMany,
   sessionsToolResultFitsBudget,
 } from "./sessions-tool-patch.js";
-import { SessionArchiveToolSchema, SessionsToolSchema } from "./sessions-tool-schema.js";
+import { SessionControlToolSchema, SessionsToolSchema } from "./sessions-tool-schema.js";
 
 const GROUP_NAME_MAX_LENGTH = 512;
 const SELF_ARCHIVE_MAX_RETRY_DELAY_MS = 5_000;
@@ -71,7 +77,7 @@ function withBoundedSessionsResolved(
 }
 
 type SessionsToolOptions = {
-  archiveOnly?: boolean;
+  controlOnly?: boolean;
   agentSessionKey?: string;
   agentSessionId?: string;
   requesterAgentIdOverride?: string;
@@ -218,29 +224,35 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
   return {
     label: "Sessions",
     name: "sessions",
-    description: opts.archiveOnly
-      ? "Archive or restore sessions you are authorized to manage. Use patch with archived=true or false. Defaults to the current session; self-archive waits until the current run finishes. Other sessions require expectedSessionId from session discovery. No deletion, settings, ownership, or group changes."
-      : "cloud_profiles lists configured cloud profiles; pass profileId for their OS and machine choices. Session settings, ownership, reset, delete, and custom sidebar groups: patch label/icon/group/status, pin, archive/restore, model/thinking override. patch with group files sessions into a group; targets applies the same patch to up to 100 visible sessions; group_list shows the catalog; group_set replaces the whole ordered catalog; group_rename/group_delete change one group everywhere. assign_owner hands responsibility to a human or agent; reset/delete visible sessions.",
-    parameters: opts.archiveOnly ? SessionArchiveToolSchema : SessionsToolSchema,
-    execute: async (_toolCallId, rawArgs) => {
+    description: opts.controlOnly
+      ? "Archive, restore, or stop sessions owned by or assigned to the requesting operator. Requires operator.write. Use patch with archived=true/false; self-archive waits until this run finishes. Stop targets another session; runId optionally selects one active run. No deletion, settings, ownership, batch, or global group changes."
+      : "cloud_profiles lists configured cloud profiles; pass profileId for their OS and machine choices. Session settings, ownership, stop, reset, delete, and custom sidebar groups: patch label/icon/group/status, pin, archive/restore, model/thinking override. patch with group files sessions into a group; targets applies the same patch to up to 100 visible sessions; group_list shows the catalog; group_set replaces the whole ordered catalog; group_rename/group_delete change one group everywhere. assign_owner hands responsibility to a human or agent; reset/delete visible sessions.",
+    parameters: opts.controlOnly ? SessionControlToolSchema : SessionsToolSchema,
+    execute: async (_toolCallId, rawArgs, signal) => {
       const params = rawArgs as Record<string, unknown>;
       const action = readToolStringParam(params, "action", { required: true });
-      if (opts.archiveOnly) {
+      if (opts.controlOnly) {
         // Discovery is not a grant: retained tools cannot fall back to System
         // dispatch after their human caller or invocation has gone away.
-        if (!hasSessionArchiveAuthority()) {
+        if (!hasSessionControlAuthority()) {
           throw new ToolAuthorizationError(
-            "Session archive requires a current operator write grant",
+            "Session control requires a current operator write grant",
           );
         }
         if (
-          action !== "patch" ||
-          typeof params.archived !== "boolean" ||
+          (action !== "patch" && action !== "stop") ||
+          (action === "patch" &&
+            (typeof params.archived !== "boolean" ||
+              params.runId !== undefined ||
+              params.clearQueued !== undefined)) ||
+          (action === "stop" && params.archived !== undefined) ||
           Object.keys(params).some(
-            (key) => !Object.hasOwn(SessionArchiveToolSchema.properties, key),
+            (key) => !Object.hasOwn(SessionControlToolSchema.properties, key),
           )
         ) {
-          throw new ToolAuthorizationError("This session tool only permits archive and restore");
+          throw new ToolAuthorizationError(
+            "This session tool only permits archive, restore, and stop",
+          );
         }
       }
       if (
@@ -251,6 +263,25 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
       ) {
         throw new ToolInputError(
           "targets is only valid for patch and cannot be combined with sessionKey or expectedSessionId",
+        );
+      }
+      if (action === "stop") {
+        const caller = captureSessionStopCaller();
+        const target = await resolvePatchTarget(
+          opts,
+          readToolStringParam(params, "sessionKey"),
+          gatewayRequest,
+        );
+        return await stopSessionTool(
+          {
+            ...target,
+            restricted: opts.controlOnly === true,
+            expectedSessionId: readToolStringParam(params, "expectedSessionId"),
+          },
+          params,
+          gatewayRequest,
+          caller,
+          signal,
         );
       }
       if (action === "reset" || action === "delete") {
@@ -435,10 +466,25 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
         | { expectedSessionId: string; expectedLifecycleRevision?: string }
         | undefined = expectedSessionId ? { expectedSessionId } : undefined;
       const patch = { key, ...lifecycleIdentity, ...values };
+      let selectedLifecycleRevision: string | null | undefined;
+      const controlTarget = () => ({
+        cfg,
+        agentId,
+        key,
+        expectedSessionId,
+        expectedLifecycleRevision: selectedLifecycleRevision,
+        restricted: true,
+      });
       const callSessionPatch = (
         sessionPatch: typeof patch & { agentId?: string },
       ): Promise<SessionsPatchResult> =>
-        patchGateway({ method: "sessions.patch", params: sessionPatch });
+        opts.controlOnly
+          ? callSessionToolControl<SessionsPatchResult>(
+              controlTarget(),
+              { method: "sessions.patch", params: sessionPatch },
+              patchGateway,
+            )
+          : patchGateway({ method: "sessions.patch", params: sessionPatch });
       const includeResolved = patch.model !== undefined || patch.thinkingLevel !== undefined;
       const agentScope = parseAgentSessionKey(key) ? {} : { agentId };
 
@@ -456,6 +502,11 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
             released &&
             lifecycleIdentity
           ) {
+            if (opts.controlOnly) {
+              const selected = await prepareSessionToolControlTarget(controlTarget());
+              selectedLifecycleRevision = selected.lifecycleRevision;
+              selected.release();
+            }
             const expectedSessionIdentity = lifecycleIdentity;
             const {
               archived: _archived,
@@ -510,7 +561,9 @@ export function createSessionsTool(opts: SessionsToolOptions = {}): AnyAgentTool
                   }
 
                   try {
-                    await callGateway("sessions.patch", archivePatch);
+                    await (opts.controlOnly
+                      ? callSessionPatch(archivePatch)
+                      : callGateway("sessions.patch", archivePatch));
                     return;
                   } catch (error) {
                     // A new turn can enter after the idle check. Wait for that

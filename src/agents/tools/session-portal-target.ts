@@ -3,7 +3,7 @@ import { captureSessionPortalTarget } from "../../gateway/worker-environments/se
 import { GATEWAY_OWNER_ONLY_CORE_TOOLS } from "../../security/dangerous-tools.js";
 import { AUTOMATIONS_TOOL_NAME } from "./automations-tool-name.js";
 import { getInProcessGatewayToolContext } from "./in-process-gateway.js";
-import { hasSessionArchiveAuthority } from "./sessions-archive-authority.js";
+import { hasSessionControlAuthority } from "./sessions-control-authority.js";
 
 export type SessionPortalToolTarget = {
   sessionKey: string;
@@ -31,7 +31,7 @@ export function prepareSessionPortalToolAccess(input: {
       ? GATEWAY_OWNER_ONLY_CORE_TOOLS.filter(
           (name) =>
             (name !== "portal" || !sessionPortalTarget) &&
-            (name !== "sessions" || !hasSessionArchiveAuthority()) &&
+            (name !== "sessions" || !hasSessionControlAuthority()) &&
             (name !== AUTOMATIONS_TOOL_NAME || !input.hasAutomationGrant),
         )
       : [];

@@ -15,7 +15,7 @@ import { applyEmbeddedAttemptToolsAllow } from "../agents/embedded-agent-runner/
 import { loadNodeExecAvailability } from "../agents/node-exec-availability.js";
 import type { PreparedRootedExecutionCapability } from "../agents/rooted-run-params.js";
 import { normalizeToolPolicyName } from "../agents/tool-policy.js";
-import { hasSessionArchiveAuthority } from "../agents/tools/sessions-archive-authority.js";
+import { hasSessionControlAuthority } from "../agents/tools/sessions-control-authority.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { DirectoryCache } from "../infra/outbound/directory-cache.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
@@ -53,7 +53,7 @@ type CachedScopedTools = {
 type McpLoopbackScopeParams = {
   context: Omit<McpLoopbackRequestContext, "senderIsOwner"> & { senderIsOwner?: boolean };
   cfg: OpenClawConfig;
-  sessionArchiveAuthority?: AdmittedRunOperatorAuthority;
+  sessionControlAuthority?: AdmittedRunOperatorAuthority;
   authProfileStore?: AuthProfileStore;
   authProfileStoreAgentDir?: string;
   skillLibraryAuthoring?: SkillLibraryAuthoringCapability;
@@ -218,7 +218,7 @@ function resolveMcpLoopbackTools(
     agentDir: params.authProfileStoreAgentDir,
     conversationReadOrigin: "delegated",
     surface: "loopback",
-    sessionArchiveAuthority: params.sessionArchiveAuthority,
+    sessionControlAuthority: params.sessionControlAuthority,
     isGrantCurrent: params.isGrantCurrent,
     excludeToolNames,
     mediatedToolNames: mediatedNativeTools,
@@ -316,7 +316,7 @@ function buildMcpLoopbackToolCacheKey(params: McpLoopbackScopeParams): string {
       delegationCapability:
         context.delegationCapability === "report_only" ? "report_only" : undefined,
     },
-    sessionArchiveAllowed: hasSessionArchiveAuthority(params.sessionArchiveAuthority),
+    sessionControlsAllowed: hasSessionControlAuthority(params.sessionControlAuthority),
     authProfileStoreAgentDir: params.authProfileStoreAgentDir,
     yieldContextCacheKey: params.yieldContextCacheKey,
     nodeExecAvailability: params.nodeExecAvailability?.cacheKey,
