@@ -2118,11 +2118,21 @@ function listImportGraphGrepMatches(
   if (result?.status !== 1) {
     const trackedFiles = new Set(listImportGraphFilesForCwd(cwd, { tooling }));
     // Source archives use the same filesystem inventory and native reader as the full graph.
-    const candidates = (
+    let candidates = (
       result?.status === 0
         ? result.stdout.split("\0").filter((file) => trackedFiles.has(file))
         : [...trackedFiles].filter((file) => !testFilesOnly || isTestFileTarget(file))
     ).toSorted((left, right) => left.localeCompare(right));
+    if (result === undefined) {
+      candidates = readTestSelectorSourceFacts(
+        cwd,
+        candidates.map((file) => ({ file, parseImports: false })),
+        missing,
+        GIT_LS_FILES_MAX_BUFFER_BYTES,
+      )
+        .filter(({ matches }) => matches.length > 0)
+        .map(({ file }) => file);
+    }
     // Per-term membership preserves the helper first-success rule.
     // Cached edges need only term facts; full-graph acquisition reuses their parsing.
     for (const { edges, matches: fileTerms } of readImportGraphEdges(
