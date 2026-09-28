@@ -87,7 +87,7 @@ html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-
   bottom: max(8px, var(--safe-area-bottom, 0px));
   left: 0;
   z-index: 70;
-  width: min(calc(100vw - 24px), 400px);
+  width: min(90vw, 336px);
   min-width: 0;
   min-height: 0;
   border-inline-end: none;
@@ -224,7 +224,7 @@ html:not(.openclaw-native-macos):not(.openclaw-native-nav):not(.openclaw-native-
 }
 
 .shell--mobile-nav .sidebar-shell {
-  --sidebar-pad-x: 8px;
+  --sidebar-pad-x: 6px;
   --sidebar-pad-bottom: 14px;
   padding: 18px var(--sidebar-pad-x) var(--sidebar-pad-bottom);
   border-radius: 0;

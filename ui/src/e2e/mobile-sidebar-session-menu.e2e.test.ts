@@ -68,11 +68,11 @@ suite.define(() => {
         const title = row.locator(".sidebar-recent-session__name");
         const titleWidth = () => title.evaluate((element) => element.getBoundingClientRect().width);
         const restingWidth = await titleWidth();
-        // A phone-width drawer must spend its width on reading, not desktop gutters.
+        // Keep the drawer increase modest; reclaim reading space inside its rows.
         const drawerBox = await page.locator(".shell-nav").boundingBox();
-        expect(drawerBox?.width).toBeGreaterThanOrEqual(360);
-        expect(drawerBox?.width).toBeLessThanOrEqual(366);
-        expect(restingWidth).toBeGreaterThanOrEqual(260);
+        expect(drawerBox?.width).toBeGreaterThanOrEqual(330);
+        expect(drawerBox?.width).toBeLessThanOrEqual(336);
+        expect(restingWidth).toBeGreaterThanOrEqual(240);
         const plainRow = page.locator(`[data-session-key="${plainKey}"]`);
         const plainTitle = plainRow.locator(".sidebar-recent-session__name");
         await plainTitle.waitFor({ state: "visible" });

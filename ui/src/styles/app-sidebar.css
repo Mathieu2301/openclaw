@@ -8,8 +8,8 @@
 
 .shell--mobile-nav .sidebar-shell {
   --sidebar-session-row-floor: 44px;
-  --sidebar-inset: 4px;
-  --sidebar-row-gap: 6px;
+  --sidebar-inset: 2px;
+  --sidebar-row-gap: 4px;
 }
 
 /* Keep metadata, but do not charge a title for an empty endcap. */
