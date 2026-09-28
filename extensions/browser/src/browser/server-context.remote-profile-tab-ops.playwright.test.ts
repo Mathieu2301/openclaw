@@ -42,7 +42,8 @@ describe("browser remote profile tab ops via Playwright", () => {
     vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
       listPagesViaPlaywright,
     } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
-    const { remote } = deps.createRemoteRouteHarness();
+    const { state } = deps.createRemoteRouteHarness();
+    const remote = deps.createBrowserRouteContext({ getState: () => state }).forProfile("remote");
 
     await expect(remote.ensureTabAvailable("T1")).resolves.toMatchObject({ targetId: "T1" });
     expect(listPagesViaPlaywright).toHaveBeenCalled();
@@ -54,10 +55,27 @@ describe("browser remote profile tab ops via Playwright", () => {
     vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
       listPagesViaPlaywright: vi.fn(async () => [page("T1")]),
     } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
-    const { remote } = deps.createRemoteRouteHarness();
+    const { state } = deps.createRemoteRouteHarness();
+    const remote = deps.createBrowserRouteContext({ getState: () => state }).forProfile("remote");
 
     await expect(remote.ensureTabAvailable("STALE_TARGET")).rejects.toThrow(/tab not found/i);
     expect(healthProbe).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat a failed remote enumeration before reporting an unavailable profile", async () => {
+    const healthProbe = vi.spyOn(deps.chromeModule, "isChromeCdpReady").mockResolvedValue(false);
+    const listPagesViaPlaywright = vi.fn(async () => {
+      throw new Error("CDP connection timed out");
+    });
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+    const { state } = deps.createRemoteRouteHarness();
+    const remote = deps.createBrowserRouteContext({ getState: () => state }).forProfile("remote");
+
+    await expect(remote.ensureTabAvailable("T1")).rejects.toThrow(/not running/i);
+    expect(listPagesViaPlaywright).toHaveBeenCalledOnce();
+    expect(healthProbe).toHaveBeenCalledOnce();
   });
 
   it("uses Playwright tab operations when available", async () => {

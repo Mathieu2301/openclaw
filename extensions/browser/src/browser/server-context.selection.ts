@@ -126,6 +126,13 @@ export function createProfileSelectionOps({
     };
 
     const tabs1 = await readTabs();
+    // For a remote explicit target, let the profile context diagnose a failed
+    // enumeration before another full action-timeout attempt doubles the delay.
+    if (capabilities.isRemote && targetId !== undefined && !sawSuccessfulList && lastListError) {
+      throw lastListError instanceof Error
+        ? lastListError
+        : new Error(formatErrorMessage(lastListError));
+    }
     await openWhenConfirmedEmpty(tabs1);
 
     let listedTabs = await readTabs();
