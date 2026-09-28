@@ -68,20 +68,21 @@ export function exitAfterSignalExitBarriers(
     return;
   }
   pendingProcessExit = waitForSignalExitBarriers()
-    .then(() => code)
+    .then(() => false)
     // The output stream may itself be broken; cleanup owners report their own failures.
-    .catch(() => (code === 0 || code === "0" ? 1 : code))
-    .then((exitCode) => {
+    .catch(() => true)
+    .then((failed) => {
       pendingProcessExit = undefined;
       const outcome = process.exitCode;
       const recordedCode = recordedProcessExitCode;
       recordedProcessExitCode = undefined;
       // The watchdog may arrive during an existing exit drain. Its recorded
-      // outcome must survive both later exitCode writes and cleanup failures.
-      process.exit(
-        recordedCode ??
-          ((exitCode === 0 || exitCode === "0") && outcome !== undefined ? outcome : exitCode),
-      );
+      // outcome survives disposable stalls, but cannot hide a rejected drain.
+      let exitCode = recordedCode ?? code;
+      if (exitCode === 0 || exitCode === "0") {
+        exitCode = failed ? 1 : (recordedCode ?? outcome ?? exitCode);
+      }
+      process.exit(exitCode);
     });
 }
 
