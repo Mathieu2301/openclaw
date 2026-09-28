@@ -516,6 +516,15 @@ CREATE TABLE IF NOT EXISTS session_goal_operations (
 CREATE INDEX IF NOT EXISTS idx_agent_session_goal_operations_expiry
   ON session_goal_operations(expires_at);
 
+CREATE TABLE IF NOT EXISTS session_message_reactions (
+  session_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  actor_type TEXT NOT NULL CHECK (actor_type IN ('profile', 'agent')),
+  actor_id TEXT NOT NULL,
+  PRIMARY KEY (session_id, message_id, emoji, actor_type, actor_id)
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS transcript_events (
   session_id TEXT NOT NULL,
   seq INTEGER NOT NULL,

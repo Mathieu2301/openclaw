@@ -978,6 +978,9 @@ enum class GatewayMethod(
   UsersMerge("users.merge"),
   GatewayStopRequest("gateway.stop.request"),
   DiagnosticsHeapSnapshot("diagnostics.heapSnapshot"),
+  ChatReactionsList("chat.reactions.list"),
+  ChatReactionsSet("chat.reactions.set"),
+  ChatReactionsPeople("chat.reactions.people"),
 }
 
 enum class GatewayEvent(
@@ -987,6 +990,7 @@ enum class GatewayEvent(
   Agent("agent"),
   Chat("chat"),
   ChatMetadataChanged("chat.metadata.changed"),
+  ChatReactionsChanged("chat.reactions.changed"),
   ModelsSnapshot("models.snapshot"),
   UiCommand("ui.command"),
   SessionApproval("session.approval"),

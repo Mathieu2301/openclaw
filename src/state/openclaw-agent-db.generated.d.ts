@@ -280,6 +280,14 @@ export interface SessionMembers {
   session_key: string;
 }
 
+export interface SessionMessageReactions {
+  actor_id: string;
+  actor_type: string;
+  emoji: string;
+  message_id: string;
+  session_id: string;
+}
+
 export interface SessionNodes {
   archived_at: number | null;
   category: string | null;
@@ -587,6 +595,7 @@ export interface DB {
   session_input_completions: SessionInputCompletions;
   session_key_contract: SessionKeyContract;
   session_members: SessionMembers;
+  session_message_reactions: SessionMessageReactions;
   session_nodes: SessionNodes;
   session_participants: SessionParticipants;
   session_pending_inputs: SessionPendingInputs;

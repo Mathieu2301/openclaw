@@ -353,6 +353,7 @@ export function projectChatTranscript(
         : null;
     return {
       ...sharedMessageRenderOptions,
+      reactions: props.reactions,
       transcriptVisible: props.transcriptVisible,
       latestBrowserTabs,
       showReasoning,
@@ -631,6 +632,8 @@ export function projectChatTranscript(
     mediaPolicyKey,
     props.assistantAttachmentAuthToken,
     props.connectionEpoch,
+    props.reactions,
+    props.reactions?.scopeVersion,
     props.canvasPluginSurfaceUrl,
     props.embedSandboxMode ?? "scripts",
     props.allowExternalEmbedUrls ?? false,

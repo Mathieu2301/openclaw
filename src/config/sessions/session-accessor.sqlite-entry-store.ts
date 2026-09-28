@@ -60,6 +60,7 @@ import {
 import { certifyCanonicalSessionValidationRow } from "./session-canonical-validation.js";
 import { preserveCreationStamp } from "./session-entry-provenance.js";
 import { resolveSessionPublicShare } from "./session-public-share.js";
+import { pruneSessionReactionsInTransaction } from "./session-reactions.kernel.js";
 import { resolveDeliveryProvenCanonicalSessionKey } from "./store-entry.js";
 import type { InternalSessionEntry as SessionEntry } from "./types.js";
 export {
@@ -255,6 +256,9 @@ export function deleteSessionEntryRows(
       database.db,
       db.deleteFrom("session_nodes").where("session_key", "=", sessionKey),
     );
+  }
+  for (const window of windows) {
+    pruneSessionReactionsInTransaction(database.db, window.session_id);
   }
   publishSessionEntryCacheInvalidation(database, { sessionKey, facts: { kind: "removed" } });
 }

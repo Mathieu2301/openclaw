@@ -38,6 +38,14 @@ action. Behavior varies by channel.
 ## Channel behavior
 
 <AccordionGroup>
+  <Accordion title="Control UI / WebChat">
+    - Agents react in their current conversation under their own configured identity. Omit `channel` and `target`; use a saved transcript `messageId`.
+    - A non-empty Unicode emoji is required. `remove: true` removes only that agent’s specified emoji, never a person’s or another agent’s reaction.
+    - Repeated adds/removes are idempotent. Counts combine distinct people and agents; hover bubbles and the full list identify agent reactors.
+    - Empty-emoji bulk removal and `trackToolCalls` status tracking are not supported. Reactions do not send a text message or start another agent turn.
+
+  </Accordion>
+
   <Accordion title="Discord and Slack">
     - Empty `emoji` removes all of the bot's reactions on the message.
     - `remove: true` removes just the specified emoji.

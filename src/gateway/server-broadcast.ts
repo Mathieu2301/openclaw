@@ -48,6 +48,7 @@ const SESSION_SUBSCRIPTION_EVENTS = new Set([
   "agent",
   "chat",
   "chat.side_result",
+  "chat.reactions.changed",
   "session.observer",
   // Mirrors the raw agent tool event (full args/result snapshots) onto
   // session subscribers; omitting it here would hand scoped clients the

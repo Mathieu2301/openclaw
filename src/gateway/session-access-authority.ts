@@ -1,11 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { ErrorCodes, errorShape } from "../../packages/gateway-protocol/src/index.js";
 import { GATEWAY_OWNER_PROFILE_ID } from "../../packages/gateway-protocol/src/schema/users.js";
-import { isRuntimeToolAllowed, isToolAllowedByPolicyName } from "../agents/tool-policy-match.js";
-import {
-  captureGatewayToolCallerAssertion,
-  getGatewayToolCallerIdentity,
-} from "../agents/tools/gateway-caller-context.js";
 import { parseAgentSessionKey, isIncognitoSessionKey } from "../routing/session-key.js";
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import { sessionChanges } from "../sessions/session-row-changes.js";
@@ -24,6 +19,7 @@ import { resolveSessionResourceToolPolicy } from "./session-resource-tool-policy
 import { getSessionRowProjection } from "./session-row-projection-access.js";
 import { authorizeOwnSessionMutation } from "./session-sharing-policy.js";
 import { prepareSessionSharing } from "./session-sharing-read.js";
+import { captureSessionToolInvocationAuthority } from "./session-tool-invocation-authority.js";
 
 type RetainedGatewaySessionAccess = {
   readonly signal: AbortSignal;
@@ -102,6 +98,9 @@ export async function prepareGatewaySessionAccessAuthority(request: {
   // Capture ingress facts before preparation yields. A newly selected profile or renewed grant
   // cannot authorize an invocation admitted under a different source.
   const client = params.client;
+  if (!client) {
+    denied("Session resources require an authenticated operator or an admitted agent run.");
+  }
   const initialActor = resolveGatewayOperatorRoleActor(client);
   const actor = initialActor ? { ...initialActor } : undefined;
   const profileId =
@@ -109,63 +108,14 @@ export async function prepareGatewaySessionAccessAuthority(request: {
   const originalGrant = client?.internal?.operatorAccessAuthority;
   const originalRun = client?.internal?.operatorRunAuthority;
   const originalScopes = [...(client?.connect.scopes ?? [])];
-  const tool = client?.internal?.agentToolCaller;
-  const runtime = client?.internal?.agentRuntimeIdentity;
-  const ambient = client?.internal?.syntheticClient ? getGatewayToolCallerIdentity() : undefined;
-  const assertAmbient = ambient ? captureGatewayToolCallerAssertion() : undefined;
-  const owner = tool ?? runtime ?? (assertAmbient ? ambient : undefined);
-  const inherited = runtime?.sessionSpawnContext?.inheritedToolPolicy;
-  const inheritedPolicy = inherited
-    ? { allow: [...inherited.allow], deny: [...inherited.deny] }
-    : undefined;
-  if (!client || (client.internal?.syntheticClient && !owner) || (tool && !tool.assertCurrent)) {
-    denied("Session resources require an authenticated operator or an admitted agent run.");
-  }
-  if (owner && (owner.sessionKey !== sessionKey || owner.agentId !== parsed.agentId)) {
-    denied("An agent can only access resources in its own conversation.");
-  }
-  const assertRun = () => {
-    tool?.assertCurrent?.();
-    if (ambient) {
-      if (
-        !assertAmbient ||
-        ambient.agentId !== parsed.agentId ||
-        ambient.sessionKey !== sessionKey ||
-        (ambient.gatewayContextResolver && ambient.gatewayContextResolver() !== params.context)
-      ) {
-        denied();
-      }
-      assertAmbient();
-    }
-    if (runtime && params.context.validateAgentRuntimeApprovalAuthority?.(runtime) !== true) {
-      denied();
-    }
-    const requiredTool = params.policy.requiredTool;
-    if (requiredTool && owner) {
-      if (ambient) {
-        if (
-          !ambient.assertToolAllowed ||
-          !ambient.operationalRunInstance ||
-          (runtime &&
-            (runtime.operationalRunInstance.instanceId !==
-              ambient.operationalRunInstance.instanceId ||
-              runtime.operationalRunInstance.runId !== ambient.operationalRunInstance.runId))
-        ) {
-          denied();
-        }
-        ambient.assertToolAllowed(requiredTool);
-      } else if (!inheritedPolicy) {
-        denied();
-      }
-      if (
-        inheritedPolicy &&
-        (!isRuntimeToolAllowed(requiredTool, inheritedPolicy.allow) ||
-          !isToolAllowedByPolicyName(requiredTool, { deny: inheritedPolicy.deny }))
-      ) {
-        denied();
-      }
-    }
-  };
+  const assertRun = captureSessionToolInvocationAuthority({
+    client,
+    context: params.context,
+    sessionKey,
+    agentId: parsed.agentId,
+    requiredTool: params.policy.requiredTool,
+    deny: denied,
+  });
   assertRun();
   originalGrant?.assertCurrent();
   originalRun?.assertCurrent();

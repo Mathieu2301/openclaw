@@ -6,11 +6,13 @@ import {
 import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import type { ChannelThreadingToolContext } from "../../channels/plugins/types.public.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { parseSessionDeliveryRoute } from "../../routing/session-key.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
-import { readTrimmedStringAlias } from "../../utils/string-readers.js";
 import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
 import { isConfiguredChannel, listConfiguredMessageChannels } from "./channel-selection.js";
+import {
+  hasExplicitSourceRouteParam,
+  hasExternalSessionDeliveryRoute,
+} from "./internal-source-route.js";
 
 type InternalSourceReplySinkInput = {
   cfg: OpenClawConfig;
@@ -19,23 +21,6 @@ type InternalSourceReplySinkInput = {
   sessionKey?: string;
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
 };
-
-function hasExternalSessionDeliveryRoute(sessionKey: string | undefined): boolean {
-  const route = parseSessionDeliveryRoute(sessionKey);
-  if (!route) {
-    return false;
-  }
-  const channel = normalizeMessageChannel(route.channel);
-  return Boolean(channel && channel !== INTERNAL_MESSAGE_CHANNEL);
-}
-
-function hasExplicitRouteParam(params: Record<string, unknown>): boolean {
-  return (
-    readTrimmedStringAlias(params, ["channel", "target", "to", "channelId"]) !== undefined ||
-    (Array.isArray(params.targets) &&
-      params.targets.some((value) => normalizeOptionalString(value)))
-  );
-}
 
 function hasCurrentSourceReplyContext(input: InternalSourceReplySinkInput): boolean {
   const provider = normalizeOptionalLowercaseString(input.toolContext?.currentChannelProvider);
@@ -86,7 +71,7 @@ export async function shouldUseInternalSourceReplySink(
     input.sourceReplyDeliveryMode === "message_tool_only" &&
     hasCurrentSourceReplyContext(input) &&
     Boolean(input.sessionKey?.trim()) &&
-    !hasExplicitRouteParam(params);
+    !hasExplicitSourceRouteParam(params);
   if (!hasImplicitCurrentSourceRoute) {
     return false;
   }

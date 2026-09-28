@@ -22,6 +22,10 @@ import {
   assertSessionGroupCategoryDestination,
   prepareSessionGroupCategoryMutation,
 } from "./session-group-categories.kernel.js";
+import {
+  setSessionReactionInDatabase,
+  type SetSessionReactionInput,
+} from "./session-reactions.kernel.js";
 import { addSessionMember, removeSessionMember } from "./session-sharing-store.native.js";
 
 type MembershipPublication = { facts?: Extract<SessionRowFacts, { kind: "member" }> };
@@ -31,6 +35,10 @@ type ParticipantPublication = {
 };
 
 export type SessionSharingWorkerOperations = {
+  reaction: {
+    input: { scope: SessionAccessScope; params: SetSessionReactionInput };
+    output: boolean;
+  };
   "category.prepare": { input: { scope: SessionAccessScope; from: string }; output: string[] };
   "category.apply": {
     input: { scope: SessionAccessScope; from: string; to?: string };
@@ -141,6 +149,9 @@ export function bindSqliteWorkerBackend(
                   command.input.to,
                   scope.env ?? process.env,
                 );
+              }
+              if (command.type === "reaction") {
+                return setSessionReactionInDatabase(db, scope.sessionKey, command.input.params);
               }
               if (command.type === "participant") {
                 const value = recordSessionParticipant(scope, command.input.params);

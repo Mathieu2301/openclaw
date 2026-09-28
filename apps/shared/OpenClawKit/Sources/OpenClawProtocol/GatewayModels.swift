@@ -4272,6 +4272,187 @@ public struct ChatMetadataParams: Codable, Sendable {
     }
 }
 
+public struct ChatReactionsChangedEvent: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String
+    public let sessionid: String
+    public let messageids: [String]
+
+    public init(
+        sessionkey: String,
+        agentid: String,
+        sessionid: String,
+        messageids: [String])
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.sessionid = sessionid
+        self.messageids = messageids
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case sessionid = "sessionId"
+        case messageids = "messageIds"
+    }
+}
+
+public struct ChatReactionsListParams: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String?
+    public let sessionid: String
+    public let messageids: [String]
+
+    public init(
+        sessionkey: String,
+        agentid: String? = nil,
+        sessionid: String,
+        messageids: [String])
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.sessionid = sessionid
+        self.messageids = messageids
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case sessionid = "sessionId"
+        case messageids = "messageIds"
+    }
+}
+
+public struct ChatReactionsListResult: Codable, Sendable {
+    public let sessionid: String
+    public let messages: [[String: AnyCodable]]
+
+    public init(
+        sessionid: String,
+        messages: [[String: AnyCodable]])
+    {
+        self.sessionid = sessionid
+        self.messages = messages
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionid = "sessionId"
+        case messages
+    }
+}
+
+public struct ChatReactionsPeopleParams: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String?
+    public let sessionid: String
+    public let messageid: String
+    public let emoji: String
+    public let cursor: String?
+
+    public init(
+        sessionkey: String,
+        agentid: String? = nil,
+        sessionid: String,
+        messageid: String,
+        emoji: String,
+        cursor: String? = nil)
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.sessionid = sessionid
+        self.messageid = messageid
+        self.emoji = emoji
+        self.cursor = cursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case sessionid = "sessionId"
+        case messageid = "messageId"
+        case emoji
+        case cursor
+    }
+}
+
+public struct ChatReactionsPeopleResult: Codable, Sendable {
+    public let sessionid: String
+    public let messageid: String
+    public let emoji: String
+    public let reactors: [[String: AnyCodable]]
+    public let nextcursor: String?
+
+    public init(
+        sessionid: String,
+        messageid: String,
+        emoji: String,
+        reactors: [[String: AnyCodable]],
+        nextcursor: String? = nil)
+    {
+        self.sessionid = sessionid
+        self.messageid = messageid
+        self.emoji = emoji
+        self.reactors = reactors
+        self.nextcursor = nextcursor
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionid = "sessionId"
+        case messageid = "messageId"
+        case emoji
+        case reactors
+        case nextcursor = "nextCursor"
+    }
+}
+
+public struct ChatReactionsSetParams: Codable, Sendable {
+    public let sessionkey: String
+    public let agentid: String?
+    public let sessionid: String
+    public let messageid: String
+    public let emoji: String
+    public let active: Bool
+
+    public init(
+        sessionkey: String,
+        agentid: String? = nil,
+        sessionid: String,
+        messageid: String,
+        emoji: String,
+        active: Bool)
+    {
+        self.sessionkey = sessionkey
+        self.agentid = agentid
+        self.sessionid = sessionid
+        self.messageid = messageid
+        self.emoji = emoji
+        self.active = active
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionkey = "sessionKey"
+        case agentid = "agentId"
+        case sessionid = "sessionId"
+        case messageid = "messageId"
+        case emoji
+        case active
+    }
+}
+
+public struct ChatReactionsSetResult: Codable, Sendable {
+    public let ok: Bool
+    public let changed: Bool
+
+    public init(
+        ok: Bool,
+        changed: Bool)
+    {
+        self.ok = ok
+        self.changed = changed
+    }
+}
+
 public struct ChatSendParams: Codable, Sendable {
     public let sessionkey: String
     public let agentid: String?

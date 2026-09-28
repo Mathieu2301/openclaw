@@ -62,6 +62,7 @@ import {
   assertSessionTranscriptHot,
   readSessionColdTranscript,
 } from "./session-cold-storage-state.js";
+import { pruneSessionReactionsInTransaction } from "./session-reactions.kernel.js";
 import { deleteSessionTranscriptIndexInTransaction } from "./session-transcript-index.js";
 import type { SessionEntry } from "./types.js";
 
@@ -585,6 +586,7 @@ function deleteSqliteSessionStateRows(database: OpenClawAgentDatabase, sessionId
     database.db,
     db.deleteFrom("session_windows").where("session_id", "=", sessionId),
   );
+  pruneSessionReactionsInTransaction(database.db, sessionId);
   return Number(deleted.numAffectedRows ?? 0n) > 0;
 }
 

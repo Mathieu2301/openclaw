@@ -834,8 +834,8 @@ describe("grouped chat rendering", () => {
       ".chat-group-footer-actions button",
     );
     expect([...actions].map((button) => button.getAttribute("aria-label"))).toEqual([
-      "Reply to message",
       "Copy as markdown",
+      "Reply to message",
     ]);
 
     container.querySelector<HTMLButtonElement>('[aria-label="Reply to message"]')?.click();
@@ -888,7 +888,7 @@ describe("grouped chat rendering", () => {
       return element.getAttribute("aria-label");
     });
 
-    expect(order).toEqual(["Reply to message", "Rewind", "Copy as markdown", "name", "time"]);
+    expect(order).toEqual(["Rewind", "Copy as markdown", "Reply to message", "name", "time"]);
   });
 
   it.each([
@@ -972,7 +972,7 @@ describe("grouped chat rendering", () => {
       return element.getAttribute("aria-label");
     });
 
-    expect(order).toEqual(["name", "time", "Reply to message", "Rewind", "Copy as markdown"]);
+    expect(order).toEqual(["name", "time", "Rewind", "Copy as markdown", "Reply to message"]);
   });
 
   it("keeps hidden assistant thinking out of inline reply context", () => {

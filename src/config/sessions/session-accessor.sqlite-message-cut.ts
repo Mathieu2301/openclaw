@@ -42,6 +42,7 @@ import { findSessionTranscriptHeader } from "./session-entry-codec.js";
 import { buildSessionCreationStamp } from "./session-entry-provenance.js";
 import { inheritSessionSelection } from "./session-entry-selection.js";
 import { extractEditorText } from "./session-message-cut-content.js";
+import { copySessionReactionsInTransaction } from "./session-reactions.kernel.js";
 import {
   markSessionTranscriptIndexDirtyInTransaction,
   reconcileSessionTranscriptIndexInTransaction,
@@ -303,6 +304,9 @@ function mutateSqliteSessionAtMessageInTransaction(
     markSessionTranscriptIndexDirtyInTransaction(database.db, nextSessionId);
   }
   appendTranscriptEventsInTransaction(database, targetScope, nextEvents);
+  if (params.mode !== "fork") {
+    copySessionReactionsInTransaction(database.db, currentEntry.sessionId, nextSessionId);
+  }
   if (rebuildSynchronously) {
     reconcileSessionTranscriptIndexInTransaction(database.db, nextSessionId);
   }

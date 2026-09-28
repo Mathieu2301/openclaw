@@ -298,7 +298,10 @@ export function projectEmbeddedMessageDeliveryFact(
     ? undefined
     : projectPluginMessageDeliveryFact(result.payload);
   const partialDelivery = payloadDelivery?.partialDelivery ? payloadDelivery : undefined;
-  if (currentSourceReply && result.handledBy === "plugin") {
+  if (
+    currentSourceReply &&
+    (result.handledBy === "plugin" || (result.kind === "action" && result.handledBy === "core"))
+  ) {
     return result.dryRun
       ? { status: "dryRun", ...EMPTY_DELIVERY_FACT }
       : projectPluginMessageDeliveryFact(result.payload);

@@ -41,6 +41,29 @@ Payload version 1 records the recap text, generation time, session ID and lifecy
 
 The latest recap survives restart and archival. Deleting the session removes it; reset or replacement makes the prior lifecycle's recap unusable. Incognito sessions do not persist or generate this cache. A shared, bounded Gateway queue deduplicates generation across viewers, retains the previous recap on failure, and uses only the configured utility route. Disabling that route stops new generation. Removing or ignoring the optional field is a rollback path that leaves session and transcript data intact; removing the feature does not require reversing a database migration.
 
+### Message reactions
+
+[Control UI message reactions](/web/webchat#message-reactions-in-control-ui) live
+in `session_message_reactions` beside the owning session window, including when
+the session uses a configured shared SQLite store. They do not live in the
+global control-plane database or in transcript JSON. Each row records a session
+ID, canonical message ID, emoji, actor type (`profile` or `agent`), and actor ID.
+The composite primary key counts each actor once per emoji while keeping profile
+and agent IDs separate. Profile merges never merge agent identities. Counts and
+current profile or configured agent labels are derived rather than separately persisted.
+
+The session store owns admission, worker reads and writes, and deletion. Its
+lifecycle owner retains reactions while either a session window or a retained
+transcript archive owns the history; reactions do not reference hot transcript
+row sequence numbers, so ordinary cold archival does not remove them. History rewind
+and branch changes transfer reactions for retained messages; forks begin with
+no reactions. Permanent history deletion removes its reaction data. Incognito
+uses the existing ephemeral session database without a persistent fallback.
+
+Database backups include these canonical rows. Transcript-only exports do not
+include them or change model-visible history. Removing the UI feature is not a
+reason to drop the table or discard saved reactions.
+
 ### Transcript search row ownership
 
 In agent schema 23, `session_transcript_fts_rows` maps each FTS `rowid` to its

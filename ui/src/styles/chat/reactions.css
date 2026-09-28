@@ -1,0 +1,233 @@
+openclaw-chat-message-reactions {
+  display: block;
+}
+
+.chat-message-action-line {
+  --chat-message-action-opacity: 0.6;
+  --chat-message-action-pointer-events: auto;
+
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-message-action-line > openclaw-chat-message-reactions {
+  min-width: 0;
+}
+
+.chat-message-action-line .chat-reactions {
+  margin-top: 0;
+}
+
+.chat-message-action-line .chat-message-actions-row {
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-left: 0;
+}
+
+.chat-reactions,
+.chat-reaction-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chat-reactions {
+  margin-top: 8px;
+}
+
+.chat-reaction-chip,
+.chat-reaction-group,
+.chat-reaction-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-accent);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.chat-reaction-chip[aria-pressed="true"],
+.chat-reaction-group[data-reacted="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+  color: var(--text);
+}
+
+.chat-reaction-chip:hover:not(:disabled),
+.chat-reaction-group:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.chat-reaction-chip:focus-visible,
+.chat-reaction-add:focus-visible,
+.chat-reaction-toggle:focus-visible,
+.chat-reaction-count:focus-visible,
+.chat-reaction-picker button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.chat-reaction-chip:disabled,
+.chat-reaction-toggle:disabled,
+.chat-reaction-add:disabled {
+  opacity: 0.6;
+}
+
+.chat-reaction-add {
+  width: 32px;
+  padding: 0;
+}
+
+.chat-reaction-add:hover:not(:disabled),
+.chat-reaction-add[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  color: var(--text);
+}
+
+.chat-reaction-add-icon {
+  display: inline-flex;
+}
+
+.chat-reaction-add-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.chat-reaction-group {
+  gap: 0;
+  padding: 0;
+}
+
+.chat-reaction-toggle,
+.chat-reaction-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.chat-reaction-toggle {
+  padding: 3px 4px 3px 8px;
+}
+
+.chat-reaction-count {
+  min-width: 22px;
+  padding: 3px 8px 3px 3px;
+}
+
+.chat-reaction-count:hover {
+  background: var(--bg-hover);
+}
+
+.chat-reaction-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.chat-reaction-error button {
+  color: inherit;
+  border: 0;
+  background: transparent;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.chat-reaction-dialog {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--text);
+  max-height: min(640px, calc(100dvh - 80px));
+  overflow: auto;
+}
+
+.chat-reaction-dialog header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.chat-reaction-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.chat-reaction-search {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.chat-reaction-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 8px;
+}
+
+.chat-reaction-picker button {
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-accent);
+  font-size: 24px;
+}
+
+.chat-reaction-people {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+
+.chat-reaction-people li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-reaction-person-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bg-accent);
+  color: var(--muted);
+}
+
+@media (pointer: coarse) {
+  .chat-reaction-chip,
+  .chat-reaction-add,
+  .chat-reaction-toggle,
+  .chat-reaction-count {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}

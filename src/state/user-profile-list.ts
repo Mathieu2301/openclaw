@@ -98,6 +98,26 @@ export function readResidentUserProfileId(
   return resolveCatalogProfile(catalog.rows, profileId)?.id;
 }
 
+/** Resident merge facts for alias-aware companion rows; never opens a database on the host. */
+export function readResidentUserProfileMergeAliases(
+  options: OpenClawStateDatabaseOptions = {},
+): Record<string, string> {
+  const catalog = profileCatalogs.get(profileCatalogPath(options));
+  if (!catalog?.valid) {
+    throw new Error("User profile catalog is not ready");
+  }
+  const aliases: Record<string, string> = {};
+  for (const row of catalog.rows.values()) {
+    if (row.merged_into) {
+      const canonical = resolveCatalogProfile(catalog.rows, row.id);
+      if (canonical) {
+        aliases[row.id] = canonical.id;
+      }
+    }
+  }
+  return aliases;
+}
+
 /** Committed canonical row identity is the revision of catalog-derived avatar facts. */
 export function readResidentUserProfileRevision(profileId: string, pathname: string) {
   const catalog = profileCatalogs.get(pathname);

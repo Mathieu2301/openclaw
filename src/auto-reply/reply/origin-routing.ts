@@ -1,5 +1,5 @@
 // Normalizes origin route fields from inbound messages and provider context.
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
+import { normalizeMessageChannel } from "../../utils/message-channel-core.js";
 import type { OriginatingChannelType } from "../templating.js";
 
 /** Resolves the original message provider before reply redirection. */

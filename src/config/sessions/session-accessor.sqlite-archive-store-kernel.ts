@@ -16,6 +16,7 @@ import type {
   TranscriptArchivePublishPlan,
   TranscriptArchivePublishResult,
 } from "./session-accessor.sqlite-archive-types.js";
+import { pruneSessionReactionsInTransaction } from "./session-reactions.kernel.js";
 
 type TranscriptArchiveDatabase = Pick<OpenClawAgentKyselyDatabase, "session_transcript_archives">;
 
@@ -51,6 +52,7 @@ export function deleteAllSessionTranscriptArchivesInTransaction(
       "session_transcript_archives",
     ),
   );
+  pruneSessionReactionsInTransaction(database.db);
 }
 
 // Composite map keys keep repeated physical IDs distinct across transcript rewrites.

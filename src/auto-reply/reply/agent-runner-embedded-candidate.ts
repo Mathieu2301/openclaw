@@ -67,6 +67,7 @@ export async function runEmbeddedFallbackCandidate(
   const { embeddedContext, senderContext, runBaseParams } = await buildEmbeddedRunExecutionParams({
     run: candidateRun,
     replyRoute: turn.followupRun,
+    userTurnAdmission: params.userTurnTranscriptRecorder?.getAdmissionReceipt(),
     sessionCtx: turn.sessionCtx,
     hasRepliedRef: turn.opts?.hasRepliedRef,
     provider: params.provider,

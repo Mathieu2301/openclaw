@@ -23,6 +23,7 @@ import type { ChannelMessageActionName } from "../../channels/plugins/types.publ
 import { readExactSessionDeliveryContext } from "../../config/sessions/delivery-info.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { stripTargetProviderPrefix } from "../../infra/outbound/channel-target-prefix.js";
+import { shouldUseInternalSourceReaction } from "../../infra/outbound/internal-source-route.js";
 import { actionHasTarget } from "../../infra/outbound/message-action-spec.js";
 import { resolveAllowedMessageActions } from "../../infra/outbound/outbound-policy.js";
 import { normalizeAccountId, parseSessionDeliveryRoute } from "../../routing/session-key.js";
@@ -258,6 +259,20 @@ function resolveMessageToolSchemaActions(params: MessageToolDiscoveryParams): st
       buildMessageActionDiscoveryInput(params, currentChannel),
     );
     const allActions = new Set<string>(["send", ...scopedActions]);
+    if (
+      params.agentId &&
+      params.sessionId &&
+      shouldUseInternalSourceReaction(
+        {
+          action: "react",
+          sessionKey: params.sessionKey,
+          toolContext: { currentChannelProvider: currentChannel },
+        },
+        {},
+      )
+    ) {
+      allActions.add("react");
+    }
     // Include actions from other configured channels so isolated/cron agents
     // can invoke cross-channel actions without validation errors.
     const channels = params.preparedMessageToolCatalog?.channels ?? listChannelPlugins();

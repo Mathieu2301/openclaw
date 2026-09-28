@@ -194,6 +194,24 @@ export type MessageActionResult =
       payload: unknown;
       toolResult?: AgentToolResult<unknown>;
       dryRun: boolean;
+    }
+  | {
+      kind: "action";
+      channel: ChannelId;
+      action: "react";
+      /** Current-session mutations do not have an external delivery destination. */
+      to?: never;
+      handledBy: "core";
+      payload: {
+        ok: true;
+        changed: boolean;
+        emoji: string;
+        messageId: string;
+        active: boolean;
+        dryRun: false;
+      };
+      toolResult?: AgentToolResult<unknown>;
+      dryRun: false;
     };
 
 function resolveMessageSendOutcome(

@@ -39,6 +39,7 @@ import {
 import { buildCommandOutputFromToolResultEvent } from "./agent-runner-command-output.js";
 import type { AgentFallbackCandidateCommonParams } from "./agent-runner-fallback-cycle.types.js";
 import { resolveRunModelHasVision } from "./agent-runner-run-params.js";
+import { resolveReplyCurrentMessageId } from "./agent-runner-source-message.js";
 import { prepareCliReplyPayload } from "./cli-reply-payload.js";
 import { shouldBridgeCliPreambleEvents } from "./get-reply.types.js";
 import { hasInboundAudio } from "./inbound-media.js";
@@ -108,12 +109,11 @@ export async function runCliFallbackCandidate(
   });
   const cliCurrentThreadId =
     turn.followupRun.originatingThreadId ?? turn.sessionCtx.MessageThreadId;
-  const isRestartSentinelContinuation =
-    turn.sessionCtx.InputProvenance?.kind === "internal_system" &&
-    turn.sessionCtx.InputProvenance.sourceTool === "restart-sentinel";
-  const cliCurrentMessageId = isRestartSentinelContinuation
-    ? turn.sessionCtx.ReplyToId
-    : (turn.sessionCtx.MessageSidFull ?? turn.sessionCtx.MessageSid);
+  const cliCurrentMessageId = resolveReplyCurrentMessageId({
+    sessionCtx: { ...turn.sessionCtx, OriginatingChannel: hookMessageProvider },
+    run: params.candidateRun,
+    userTurnAdmission: params.userTurnTranscriptRecorder?.getAdmissionReceipt(),
+  });
   const commandDetailsVisible = turn.resolvedVerboseLevel === "full";
   const cliToolSummaryTracker = createCliToolSummaryTracker({
     detailMode: turn.toolProgressDetail,

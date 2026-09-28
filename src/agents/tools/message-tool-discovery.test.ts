@@ -191,6 +191,43 @@ describe("session-derived message destinations", () => {
   });
 });
 
+describe("native Control UI reactions", () => {
+  it("discovers reactions only for bound native sessions and preserves action policy", () => {
+    const params: MessageToolDiscoveryParams = {
+      cfg: {},
+      currentChannelProvider: "webchat",
+      agentId: "main",
+      sessionKey: "agent:main:dashboard:reaction",
+      sessionId: "saved-window",
+      preparedMessageToolCatalog: { version: 1, channels: [], getChannel: () => undefined },
+    };
+    const actions = resolveMessageToolActionSchemaActions(params);
+    expect(actions).toEqual(["react", "send"]);
+    expect(
+      Value.Check(buildMessageToolSchema(params, actions), {
+        action: "react",
+        emoji: "👍",
+        remove: true,
+      }),
+    ).toBe(true);
+    expect(resolveMessageToolActionSchemaActions({ ...params, sessionId: undefined })).toEqual([
+      "send",
+    ]);
+    expect(
+      resolveMessageToolActionSchemaActions({
+        ...params,
+        sessionKey: "agent:main:telegram:direct:123",
+      }),
+    ).toEqual(["send"]);
+    expect(
+      resolveMessageToolActionSchemaActions({
+        ...params,
+        cfg: { tools: { message: { actions: { allow: ["send"] } } } },
+      }),
+    ).toEqual(["send"]);
+  });
+});
+
 describe("message tool discovery cache stability", () => {
   it.each([
     { allow: undefined, expected: ["poll", "poll-vote", "react", "send"] },

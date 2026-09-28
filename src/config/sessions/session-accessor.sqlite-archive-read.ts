@@ -164,7 +164,7 @@ async function findArchivedFinal(
   return result;
 }
 
-async function scanArchivedTranscript(
+export async function scanArchivedTranscript(
   bytes: Uint8Array,
   compressed: boolean,
   sessionId: string,

@@ -31,6 +31,7 @@ const TARGET_TABLES = new Set([
   "session_participants",
   "session_windows",
   "session_members",
+  "session_message_reactions",
   "conversations",
   "session_conversations",
   "transcript_events",

@@ -1,4 +1,5 @@
 export * from "./error-details.js";
+export type * from "./chat-reactions.js";
 export * from "./github-publication-api.js";
 export * from "./session-agent-status.js";
 export type {

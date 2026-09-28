@@ -257,6 +257,19 @@ type SessionProjectionStatusWorkerInput = {
   sessionId?: string;
 };
 
+type SessionReactionsWorkerInput = {
+  kind: "session-reactions";
+  database: { agentId: string; path: string };
+  sessionKey: string;
+  env: NodeJS.ProcessEnv;
+  query:
+    | { kind: "list"; input: import("./session-reactions.kernel.js").ListSessionReactionsInput }
+    | {
+        kind: "people";
+        input: import("./session-reactions.kernel.js").PeopleSessionReactionsInput;
+      };
+};
+
 type SessionMembersWorkerInput = {
   kind: "session-members";
   database: { agentId: string; path: string };
@@ -461,6 +474,7 @@ export type SessionHistoryWorkerInput =
   | SessionRowPresenceWorkerInput
   | SessionProjectionStatusWorkerInput
   | SessionMembersWorkerInput
+  | SessionReactionsWorkerInput
   | SessionMembershipFactsWorkerInput
   | SessionProgressCardWorkerInput
   | SessionPendingInputReceiptsWorkerInput
@@ -514,6 +528,12 @@ export type SessionTranscriptWorkerValues = {
   "session-row-backfill": SessionRowBackfillWorkerResult;
   "session-row-presence": boolean;
   "projection-status": boolean;
+  "session-reactions": {
+    kind: "session-reactions";
+    result:
+      | import("./session-reactions.kernel.js").SessionReactionSummary[]
+      | import("./session-reactions.kernel.js").SessionReactionPeople;
+  };
   "session-members": SessionMember[];
   "session-membership-facts": SessionMembershipFacts;
   "session-progress-card": { kind: "session-progress-card"; card: ProgressCard | null };
@@ -639,6 +659,9 @@ export type SessionHistoryWorkerDatabase = {
   readDiagnosticText: (
     input: Omit<SessionDiagnosticTextWorkerInput, "kind" | "database">,
   ) => Promise<string | undefined>;
+  readReactions: (
+    input: Omit<SessionReactionsWorkerInput, "kind" | "database">,
+  ) => Promise<SessionTranscriptWorkerValues["session-reactions"]["result"]>;
   readMembers: (
     input: Omit<SessionMembersWorkerInput, "kind" | "database">,
   ) => Promise<SessionMember[]>;

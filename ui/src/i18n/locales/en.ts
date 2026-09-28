@@ -2976,6 +2976,23 @@ export const en: TranslationMap & {
   login: {},
   chat: {
     historyRequestTimedOut: "Chat history request timed out. Retry to load the conversation.",
+    reactions: {
+      add: "Add reaction",
+      people: "Who reacted",
+      peopleForEmoji: "Who reacted with {emoji}",
+      agentName: "{name} (agent)",
+      search: "Search emoji",
+      empty: "No emoji found. Try a shortcode such as heart or thumbsup.",
+      none: "No reactions yet.",
+      loadFailed: "Could not load reactions.",
+      saveFailed: "Could not save your reaction.",
+      peopleFailed: "Could not load people.",
+      retry: "Retry",
+      more: "Load more",
+      names: "{names} reacted with {emoji}",
+      moreNames: "{names} and {count} more reacted with {emoji}",
+      toggle: "{emoji}, {count} reactions",
+    },
     clawhub: {
       retryStatus: "Status unavailable · Retry",
       viewDetails: "View details",

@@ -19,7 +19,9 @@ import {
   resolveSourceMessageId,
   type AssistantMessageExpansionState,
 } from "../chat-message-recovery.ts";
+import type { ChatReactionsController } from "../chat-reactions.ts";
 import { persistedMessageEntryId } from "../chat-thread.ts";
+import { renderRewindButton } from "./chat-message-confirmation.ts";
 import { extractMessageMediaText } from "./chat-message-media.ts";
 
 registerChatMessageMetadataEnglish();
@@ -27,6 +29,8 @@ registerChatMessageMetadataEnglish();
 export type MessageReplyTarget = ChatReplyTarget;
 
 export type MessageActionDetails = {
+  /** Canonical saved user/assistant target for the shared reaction/action row. */
+  reactionMessageId?: string;
   /** Source for context copy, independent of footer visibility and reply truncation. */
   copyMarkdown?: string;
   markdown?: string;
@@ -103,11 +107,14 @@ export function resolveMessageActionDetails(
     role === "assistant" || role === "user" || pendingInput ? visibleMarkdown : undefined;
   const copyMarkdown = resolveMessageReplyText(message, normalizedMessage, visibleMarkdown);
   const replyText = onReply && !pendingInput ? truncateUtf16Safe(copyMarkdown, 500) : "";
-  if (!copyMarkdown && !markdown && !replyText && !fullMessage) {
+  const sourceMessageId = persistedMessageEntryId(message);
+  const reactionMessageId =
+    (role === "user" || role === "assistant") && sourceMessageId ? sourceMessageId : undefined;
+  if (!copyMarkdown && !markdown && !replyText && !fullMessage && !reactionMessageId) {
     return null;
   }
-  const sourceMessageId = persistedMessageEntryId(message);
   return {
+    ...(reactionMessageId ? { reactionMessageId } : {}),
     copyMarkdown,
     ...(markdown === undefined ? {} : { markdown }),
     fullMessage,
@@ -131,12 +138,12 @@ export function renderMessageActionButtons(
   },
 ) {
   return html`
+    ${details.markdown ? renderCopyAsMarkdownButton(details.markdown) : nothing}
     ${
       details.replyTarget && opts.onReply
         ? renderReplyButton(details.replyTarget, opts.onReply)
         : nothing
     }
-    ${details.markdown ? renderCopyAsMarkdownButton(details.markdown) : nothing}
   `;
 }
 
@@ -155,5 +162,39 @@ export function renderReplyButton(
         ${icons.messageSquare}
       </button>
     </openclaw-tooltip>
+  `;
+}
+
+export type MessageReactionActionOptions = {
+  isStreaming: boolean;
+  reactions?: ChatReactionsController;
+  messageActions?: MessageActionDetails | null;
+  onReply?: (target: MessageReplyTarget) => void;
+  onRewind?: () => void;
+  rewindDisabled?: boolean;
+};
+
+export function renderMessageReactionActions(
+  messageKey: string,
+  role: string,
+  opts: MessageReactionActionOptions,
+) {
+  const reactionMessageId = !opts.isStreaming ? opts.messageActions?.reactionMessageId : undefined;
+  return html`
+    ${
+      reactionMessageId && (role === "user" || role === "assistant") && opts.reactions
+        ? html`<div class="chat-message-action-line" data-message-actions-for=${messageKey}>
+            <openclaw-chat-message-reactions
+              data-message-id=${reactionMessageId}
+              .messageId=${reactionMessageId}
+              .controller=${opts.reactions}
+              .actions=${html`<div class="chat-message-actions-row">
+                ${role === "user" && opts.onRewind && !opts.rewindDisabled ? renderRewindButton(opts.onRewind) : nothing}
+                ${opts.messageActions ? renderMessageActionButtons(opts.messageActions, opts) : nothing}
+              </div>`}
+            ></openclaw-chat-message-reactions>
+          </div>`
+        : nothing
+    }
   `;
 }

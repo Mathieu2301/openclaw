@@ -17,6 +17,10 @@ describe("SQLite sessions/transcripts schema baseline", () => {
 
     expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS session_nodes");
     expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS session_windows");
+    expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS session_message_reactions");
+    expect(rendered.sql).toContain(
+      "PRIMARY KEY (session_id, message_id, emoji, actor_type, actor_id)",
+    );
     expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS transcript_events");
     expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS transcript_event_identities");
     expect(rendered.sql).toContain("CREATE TABLE IF NOT EXISTS session_transcript_active_events");

@@ -33,6 +33,7 @@ import { buildCompanionQuestionPrefill } from "../../../lib/chat/companion-quest
 import type { EmbedSandboxMode } from "../../../lib/chat/tool-display.ts";
 import type { UiSessionDefaultsHost } from "../../../lib/sessions/session-key.ts";
 import type { TurnRecapWatch } from "../chat-progress.ts";
+import type { ChatReactionsController } from "../chat-reactions.ts";
 import { resetChatThreadState } from "../chat-thread.ts";
 import type { PluginToolIcons } from "../chat-tool-icon-controller.ts";
 import type { ChatTypingActorView, ChatTypingOverflow } from "../chat-typing-presence.ts";
@@ -104,6 +105,7 @@ type ReplyMessageAccess = {
 };
 
 export type ChatThreadProps = ChatSendStatusActions & {
+  reactions?: ChatReactionsController;
   branding?: ThemeBranding;
   compactionStatus?: CompactionStatus | null;
   paneId: string;

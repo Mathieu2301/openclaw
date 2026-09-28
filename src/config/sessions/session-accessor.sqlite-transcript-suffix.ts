@@ -26,6 +26,7 @@ import {
   prepareIncrementalSuffixIdempotencyMutation,
   type IncrementalSuffixIdempotencyMutation,
 } from "./session-accessor.sqlite-transcript-suffix-idempotency.js";
+import { pruneSessionReactionsInTransaction } from "./session-reactions.kernel.js";
 import {
   markSessionTranscriptIndexDirtyInTransaction,
   replaceSessionTranscriptIndexSuffixInTransaction,
@@ -556,6 +557,7 @@ export function replaceSqliteTranscriptSuffixInTransaction(
     );
   }
 
+  pruneSessionReactionsInTransaction(database.db, resolved.sessionId);
   const removedIdempotencyKeys = new Set(
     [...suffixIdentityKeys.values()].filter(
       (key): key is string => key !== null && !retainedIdempotencyKeys.has(key),

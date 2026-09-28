@@ -19,6 +19,7 @@ import type {
   PublishedSessionTranscriptArchive,
   SessionLegacyArchiveRemovalResult,
 } from "./session-history-archive-pruning.types.js";
+import { pruneSessionReactionsInTransaction } from "./session-reactions.kernel.js";
 import type { SessionArchivePruningWorkerInput } from "./session-transcript-worker.types.js";
 
 export function readSessionArchivePruningInDatabase(
@@ -168,6 +169,7 @@ export function deletePublishedSessionArchiveInDatabase(
       if (deletion.numAffectedRows !== 1n) {
         throw new Error("SQLite session archive changed during pruning; retry cleanup.");
       }
+      pruneSessionReactionsInTransaction(transactionDb.db, row.session_id);
       admit("commit");
     },
     options,

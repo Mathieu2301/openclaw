@@ -1,4 +1,5 @@
 import { asNonArrayRecord } from "@openclaw/normalization-core/record-coerce";
+import type { ChatReactionsChangedEvent } from "../../../../packages/gateway-protocol/src/chat-reactions.js";
 import type {
   SessionSuggestionEvent,
   SessionTypingEvent,
@@ -420,6 +421,10 @@ export abstract class ChatPaneLifecycle extends ChatPaneSessionObservation {
     chatState.addCleanup(
       this.context.gateway.subscribeEvents((event) => {
         const state = this.state;
+        if (event.event === "chat.reactions.changed" && event.payload) {
+          this.reactions.changed(event.payload as ChatReactionsChangedEvent);
+          return;
+        }
         if (
           state &&
           event.event === "sessions.changed" &&

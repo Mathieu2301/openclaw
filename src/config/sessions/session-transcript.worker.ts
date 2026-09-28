@@ -427,6 +427,17 @@ serveOwnedWorkerTasks(
             : request.sessionId === undefined && result.reason === "schema-missing";
         });
       }
+      if (request.kind === "session-reactions") {
+        const { readSessionReactionsInWorker } = await import("./session-reactions.read.js");
+        return await withHistoryDatabase(request.database, request.kind, async () => ({
+          kind: "session-reactions" as const,
+          result: await readSessionReactionsInWorker(
+            { ...request.database, env: request.env },
+            request.sessionKey,
+            request.query,
+          ),
+        }));
+      }
       if (request.kind === "session-members") {
         const { withOpenClawAgentDatabaseReadOnly } =
           await import("../../state/openclaw-agent-db-readonly.js");

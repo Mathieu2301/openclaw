@@ -77,6 +77,47 @@ WebChat has two separate data paths:
 
 Normal agent-run final answers should be durable because the embedded runtime writes the assistant `message_end`. Any fallback that mirrors a delivered final payload into the transcript must first avoid duplicating an assistant turn that the embedded runtime already wrote.
 
+## Message reactions in Control UI
+
+Signed-in participants can react to saved human and assistant messages with emoji.
+Use **Add reaction** beneath a message, or select an existing emoji to add your
+reaction. Select a highlighted emoji again to remove your own reaction. Each
+person or agent counts once per emoji, even if a request is retried.
+
+Reaction chips show the emoji and the number of people and agents who selected it. Hover or
+focus an emoji to see names in a small bubble. Select the count to open the
+complete, paginated **Who reacted** list without changing your reaction; this also
+works on touch screens. People who can read the session can see its
+reactions. Adding or removing a reaction requires the existing session
+participation permission; it does not require owning the original message.
+
+The Gateway stores reaction metadata separately from message content and model-visible
+chat history, and synchronizes changes across connected clients. Human reactions do
+not start an agent turn. An agent that reacts receives the normal result of its own
+tool call; reactions do not create ratings, analytics, or training-feedback records.
+These are native Control UI reactions, not reactions sent to an external channel.
+
+Reactions become available when a message has a saved transcript identity, not
+while a queued input or unsaved streaming segment is still provisional. They
+survive reloads and ordinary archival, follow retained messages through history
+rewind and branch changes, and are removed when their history is permanently
+deleted. A fork starts a separate reaction set. Incognito reactions use only the
+session’s ephemeral storage. Database backups include reaction rows; transcript-only
+exports remain unchanged.
+
+Clients use `chat.reactions.list` for bounded batches, `chat.reactions.set` to set
+the authenticated human or admitted agent’s desired reaction state, and `chat.reactions.people` to
+page through reactor identities. The access-scoped `chat.reactions.changed` event
+invalidates affected messages; reconnecting clients fetch current state again.
+The Gateway derives reactor identity from authentication, never from a
+caller-supplied profile ID, agent ID, or display name.
+
+Agents use the existing `message` tool with `action: "react"`, a Unicode `emoji`,
+and a saved `messageId` in their current conversation; omit `channel` and `target`.
+Set `remove: true` to remove that agent’s own emoji. Agents cannot remove someone
+else’s reaction or act as another agent. Hover names and the full reactor list
+identify agents separately, for example **Atlas (agent)**.
+
 ## Human mention delivery
 
 The Control UI binds each [selected person](/concepts/multi-user#mentioning-people) to the submitted message text. `chat.send`, the initial message on `sessions.create`, and `sessions.send` accept an optional `mentions` array of `{ profileId, start, end }` annotations. There are at most ten annotations. `start` is inclusive and `end` is exclusive, measured in UTF-16 code units. The Gateway validates their text ranges and recipients before accepting the input. Plain `@name` text and agent output do not create human mentions. Copying or quoting text does not copy its recipient selections.

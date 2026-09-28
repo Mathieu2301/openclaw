@@ -32,6 +32,7 @@ import {
 } from "./channel-selection.js";
 import { assertOutboundHandoffCurrent, OutboundHandoffRejectedError } from "./deliver-handoff.js";
 import { shouldUseInternalSourceReplySink } from "./internal-source-reply.js";
+import { shouldUseInternalSourceReaction } from "./internal-source-route.js";
 import { validateExplicitMessageAccountSelection } from "./message-account-selection.js";
 import {
   resolveMessageActionOutcome,
@@ -540,6 +541,10 @@ export async function runMessageAction(input: MessageActionInput): Promise<Messa
   }
   if (action === "send" && hasPollCreationParams(params)) {
     throw new Error('Poll fields require action "poll"; use action "poll" instead of "send".');
+  }
+  if (shouldUseInternalSourceReaction(input, params)) {
+    const { executeInternalSourceReaction } = await import("./internal-source-reaction.js");
+    return executeInternalSourceReaction({ ...input, agentId: resolvedAgentId }, params);
   }
   if (await shouldUseInternalSourceReplySink(input, params)) {
     return handleInternalSourceReplySendAction({ ...input, agentId: resolvedAgentId }, params);

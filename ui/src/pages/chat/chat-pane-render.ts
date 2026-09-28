@@ -374,7 +374,12 @@ export class ChatPane extends ChatPaneLayoutRender {
       currentAgentId,
       !catalogKey && !sessionParticipationBlocked,
     );
+    this.configureChatReactions(state, {
+      enabled: !catalogKey,
+      canReact: !sessionParticipationBlocked && hasWriteScope && Boolean(selfProfileId),
+    });
     const props: ChatProps = {
+      reactions: this.reactions,
       transcript: this.transcript,
       paneId: this.presentationId,
       sessionKey: state.sessionKey,

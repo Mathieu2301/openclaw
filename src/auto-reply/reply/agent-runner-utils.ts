@@ -34,6 +34,10 @@ import type { TemplateContext } from "../templating.js";
 import { resolveRunAuthProfile } from "./agent-runner-auth-profile.js";
 import type { AgentTurnParams } from "./agent-runner-execution.types.js";
 import { buildEmbeddedRunBaseParams } from "./agent-runner-run-params.js";
+import {
+  resolveReplyCurrentMessageId,
+  type ReplySourceMessageContext,
+} from "./agent-runner-source-message.js";
 import { hasInboundAudio } from "./inbound-media.js";
 import { resolveOriginMessageProvider } from "./origin-routing.js";
 import type { FollowupRun } from "./queue.js";
@@ -111,18 +115,14 @@ export async function resolveQueuedReplyExecutionConfig(
 }
 
 /** Builds channel threading context for message-tool replies. */
-export function buildThreadingToolContext(params: {
-  sessionCtx: TemplateContext;
-  config: OpenClawConfig | undefined;
-  hasRepliedRef: { value: boolean } | undefined;
-}): InternalChannelThreadingToolContext {
+export function buildThreadingToolContext(
+  params: ReplySourceMessageContext & {
+    config: OpenClawConfig | undefined;
+    hasRepliedRef: { value: boolean } | undefined;
+  },
+): InternalChannelThreadingToolContext {
   const { sessionCtx, config, hasRepliedRef } = params;
-  const isRestartSentinelContinuation =
-    sessionCtx.InputProvenance?.kind === "internal_system" &&
-    sessionCtx.InputProvenance.sourceTool === "restart-sentinel";
-  const currentMessageId = isRestartSentinelContinuation
-    ? sessionCtx.ReplyToId
-    : (sessionCtx.MessageSidFull ?? sessionCtx.MessageSid);
+  const currentMessageId = resolveReplyCurrentMessageId(params);
   const currentSourceTurnId = readChannelSourceTurnId(sessionCtx);
   const originProvider = resolveOriginMessageProvider({
     originatingChannel: sessionCtx.OriginatingChannel,
@@ -237,6 +237,7 @@ export function resolveRunFastModeForFallbackCandidate(params: {
   };
 }
 function buildEmbeddedContextFromTemplate(params: {
+  userTurnAdmission?: ReplySourceMessageContext["userTurnAdmission"];
   run: FollowupRun["run"];
   replyRoute?: EmbeddedReplyRoute;
   sessionCtx: TemplateContext;
@@ -281,6 +282,8 @@ function buildEmbeddedContextFromTemplate(params: {
     // Provider threading context for tool auto-injection
     ...buildThreadingToolContext({
       sessionCtx,
+      run: params.run,
+      userTurnAdmission: params.userTurnAdmission,
       config,
       hasRepliedRef: params.hasRepliedRef,
     }),
@@ -318,6 +321,9 @@ export function mintReplyMessageActionTurnCapability(
   const context = buildEmbeddedContextFromTemplate({
     run: turn.followupRun.run,
     replyRoute: turn.followupRun,
+    userTurnAdmission: (
+      turn.followupRun.userTurnTranscriptRecorder ?? turn.opts?.userTurnTranscriptRecorder
+    )?.getAdmissionReceipt(),
     sessionCtx: turn.sessionCtx,
     hasRepliedRef: turn.opts?.hasRepliedRef,
   });
@@ -380,6 +386,7 @@ export function mintReplyMessageActionTurnCapability(
 
 /** Builds execution-specific embedded run params for queued reply dispatch. */
 export async function buildEmbeddedRunExecutionParams(params: {
+  userTurnAdmission?: ReplySourceMessageContext["userTurnAdmission"];
   run: FollowupRun["run"];
   replyRoute?: EmbeddedReplyRoute;
   sessionCtx: TemplateContext;
@@ -394,6 +401,7 @@ export async function buildEmbeddedRunExecutionParams(params: {
   const embeddedContext = buildEmbeddedContextFromTemplate({
     run: params.run,
     replyRoute: params.replyRoute,
+    userTurnAdmission: params.userTurnAdmission,
     sessionCtx: params.sessionCtx,
     hasRepliedRef: params.hasRepliedRef,
   });

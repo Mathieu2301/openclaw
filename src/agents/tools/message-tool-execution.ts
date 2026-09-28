@@ -231,7 +231,15 @@ export function createMessageTool(options?: MessageToolOptions): AnyAgentTool {
   const schema = addSourceReplyFinalControl(baseSchema);
   const description = options?.sourceReplyOnly
     ? "Send a message to the current source conversation. Supports actions: send."
-    : buildMessageToolDescription(actions);
+    : `${buildMessageToolDescription(actions)}${
+        currentChannelIsInternal &&
+        options?.agentSessionKey?.trim() &&
+        options.sessionId &&
+        resolvedAgentId &&
+        actions?.includes("react")
+          ? " In the current Control UI chat, react with emoji and optional messageId; omit channel and target. Use remove:true to remove your own reaction."
+          : ""
+      }`;
   const sandboxRoot = options?.sandboxRoot?.trim();
   const sandboxWorkspaceMediaAccess =
     sandboxRoot && options?.sandboxFsBridge && options.sandboxWorkspaceMediaReadAllowed === true

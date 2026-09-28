@@ -214,6 +214,12 @@ export function createSessionHistoryWorkerReaders(
       (input) => ({ kind: "session-membership-facts", ...input }),
       (value) => value,
     ),
+    readReactions: reader(
+      "session-reactions",
+      "reactions",
+      (input) => ({ kind: "session-reactions", ...input }),
+      (value) => value.result,
+    ),
     readMembers: async (input) =>
       await runRequest(
         () => ({ kind: "session-members", ...input }),

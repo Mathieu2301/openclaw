@@ -38,7 +38,6 @@ import { renderRewindButton } from "./chat-message-confirmation.ts";
 import {
   FULL_MESSAGE_RETRY_REVISION_LIMIT,
   renderMessageActionButtons,
-  renderReplyButton,
   prepareChatMessageRender,
   resolveMessageActionDetails,
   type MessageReplyTarget,
@@ -103,10 +102,7 @@ type RenderMessageGroupOptions = Omit<
     avatarPlacement?: "gutter" | "footer" | "none";
     showAssistantAvatar?: boolean;
     contextWindow?: number | null;
-    onReply?: (target: MessageReplyTarget) => void;
     resolveReplyPreview?: (replyToId: string) => ReplyPreview | undefined;
-    onRewind?: () => void;
-    rewindDisabled?: boolean;
     activeContinuation?: ActiveContinuation;
     turnRecap?: TurnRecap;
     /** Frame bodies are pre-rendered by the frame owner; ordinary groups omit them. */
@@ -180,6 +176,7 @@ function renderPreparedGroupMessage(
       autoExpandToolCalls: opts.autoExpandToolCalls ?? false,
       assistantMessageDisclosure,
       messageActions: actionDetails,
+      onRewind: index === group.messages.length - 1 ? opts.onRewind : undefined,
     },
     opts.onOpenSidebar,
   );
@@ -504,7 +501,7 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
 
   const ownsRunFrame = opts.frameContent !== undefined;
   // Tool activity and live narration are blocks of the turn whose answer follows:
-  // no identity, footer or actions of their own, only the run-block gap.
+  // no identity/footer of their own. Saved narration keeps its inline message actions.
   const isTurnBlock =
     normalizedRole === "tool" ||
     (normalizedRole === "assistant" &&
@@ -525,7 +522,9 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
   const footerActionMessageKey = ownsRunFrame
     ? opts.frameActionOwner?.key
     : group.messages[lastMessageIndex]?.key;
+  const hasInlineFooterActions = Boolean(opts.reactions && footerActionDetails?.reactionMessageId);
   const hasUserFooterActions =
+    !hasInlineFooterActions &&
     normalizedRole === "user" &&
     Boolean(
       (footerActionDetails?.replyTarget && opts.onReply) ||
@@ -538,17 +537,8 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
           class="chat-group-footer-actions"
           data-message-actions-for=${footerActionMessageKey ?? nothing}
         >
-          ${
-            footerActionDetails?.replyTarget && opts.onReply
-              ? renderReplyButton(footerActionDetails.replyTarget, opts.onReply)
-              : nothing
-          }
           ${opts.onRewind && !opts.rewindDisabled ? renderRewindButton(opts.onRewind) : nothing}
-          ${
-            footerActionDetails?.markdown
-              ? renderMessageActionButtons(footerActionDetails, {})
-              : nothing
-          }
+          ${footerActionDetails ? renderMessageActionButtons(footerActionDetails, opts) : nothing}
         </div>
       `
     : nothing;
@@ -623,6 +613,7 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
                 )}
                 ${
                   actionDetails &&
+                  !(opts.reactions && actionDetails.reactionMessageId) &&
                   (actionDetails.markdown || (actionDetails.replyTarget && opts.onReply)) &&
                   index < lastMessageIndex &&
                   !isTurnBlock
@@ -701,7 +692,7 @@ export function renderMessageGroup(group: MessageGroup, opts: RenderMessageGroup
                 ${
                   isPeerGroup
                     ? userFooterActions
-                    : normalizedRole !== "user" && footerActionDetails
+                    : normalizedRole !== "user" && footerActionDetails && !hasInlineFooterActions
                       ? html`
                           <div
                             class="chat-group-footer-actions"

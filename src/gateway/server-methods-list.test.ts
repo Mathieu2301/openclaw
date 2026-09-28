@@ -248,6 +248,9 @@ describe("listGatewayMethods", () => {
       "users.merge",
       "gateway.stop.request",
       "diagnostics.heapSnapshot",
+      "chat.reactions.list",
+      "chat.reactions.set",
+      "chat.reactions.people",
     ];
     expect(listGatewayMethods().slice(-expectedSuffix.length)).toEqual(expectedSuffix);
     const methods = listGatewayMethods();
@@ -319,6 +322,9 @@ describe("listGatewayMethods", () => {
       "users.merge",
       "gateway.stop.request",
       "diagnostics.heapSnapshot",
+      "chat.reactions.list",
+      "chat.reactions.set",
+      "chat.reactions.people",
     ]);
   });
 
@@ -518,6 +524,9 @@ describe("listGatewayMethods", () => {
       "users.merge",
       "gateway.stop.request",
       "diagnostics.heapSnapshot",
+      "chat.reactions.list",
+      "chat.reactions.set",
+      "chat.reactions.people",
     ];
     expect(coreMethods.slice(-expectedCoreSuffix.length)).toEqual(expectedCoreSuffix);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));

@@ -20,6 +20,7 @@ const SESSION_TARGET_POLICY_BY_METHOD = new Map<string, SessionTargetPolicy>([
   ["board.widget.put", { fields: ["sessionKey"], required: true }],
   ["chat.abort", { fields: ["sessionKey"], required: true }],
   ["chat.inject", { fields: ["sessionKey"], required: true }],
+  ["chat.reactions.set", { fields: ["sessionKey"], required: true }],
   ["chat.send", { fields: ["sessionKey"], required: true, runStart: true }],
   ["mcp.app.callTool", { fields: ["sessionKey"], required: true }],
   ["mcp.app.updateModelContext", { fields: ["sessionKey"], required: true }],

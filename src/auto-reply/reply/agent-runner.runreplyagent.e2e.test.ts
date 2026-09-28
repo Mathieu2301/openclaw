@@ -654,6 +654,48 @@ function requireBuiltChannelSourceTurnId(
 }
 
 describe("runReplyAgent active steering", () => {
+  it("binds native WebChat tools to the committed user event, not the send run id", async () => {
+    const { sessionEntry, sessionStore, storePath } = await makeSessionFixture();
+    const clientRunId = "webchat-original-send";
+    const { followupRun, run } = createMinimalRun({
+      sessionEntry,
+      sessionStore,
+      storePath,
+      sessionCtx: { Provider: "webchat", MessageSid: clientRunId },
+      runOverrides: { agentId: "main", messageProvider: "webchat" },
+    });
+    attachSourceTurnRecorder({
+      followupRun,
+      sessionEntry,
+      sessionStore,
+      sourceTurnId: clientRunId,
+      storePath,
+      text: "react to this saved message",
+    });
+    const recorder = followupRun.userTurnTranscriptRecorder;
+    if (!recorder) {
+      throw new Error("expected the source recorder");
+    }
+    expect(recorder.getAdmissionReceipt()).toBeUndefined();
+    let admissionAtDispatch: ReturnType<typeof recorder.getAdmissionReceipt>;
+    state.runEmbeddedAgentMock.mockImplementationOnce(async () => {
+      admissionAtDispatch = recorder.getAdmissionReceipt();
+      return { payloads: [{ text: "done" }], meta: {} };
+    });
+
+    await run();
+
+    expect(admissionAtDispatch).toBeDefined();
+    expect(admissionAtDispatch?.entryId).not.toBe(clientRunId);
+    expect(state.runEmbeddedAgentMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        currentMessageId: admissionAtDispatch?.entryId,
+        userTurnTranscriptRecorder: recorder,
+      }),
+    );
+    expect(recorder.getPersistedMessage?.()?.idempotencyKey).toBe(clientRunId);
+  });
+
   it("queues instead of steering when privilege facts differ on the active route", async () => {
     const activeRoute = { provider: "openai", model: "gpt-fallback" };
     const { followupRun, run } = createMinimalRun({

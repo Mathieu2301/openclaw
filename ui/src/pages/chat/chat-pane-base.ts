@@ -55,6 +55,7 @@ import { sameChatPanePresence } from "./chat-pane-presence.ts";
 import type { PendingSessionPanelToggle } from "./chat-pane-session-panel-toggle.ts";
 import type { ChatPaneConnectionScope, PaneSessionChangeOptions } from "./chat-pane-shared.ts";
 import { SessionParticipationTracker } from "./chat-pane-state.ts";
+import { ChatReactionsController } from "./chat-reactions.ts";
 import { ChatStateController } from "./chat-state-controller.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
 import { requestChatPageUpdate } from "./chat-state-render.ts";
@@ -121,6 +122,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   }
 
   override disconnectedCallback() {
+    this.reactions.configure(null);
     this.removeEventListener(
       CHAT_TRANSCRIPT_LOADING_CHANGED_EVENT,
       this.synchronizeForegroundTranscript,
@@ -208,6 +210,9 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
     const wasConversationPresented = this.conversationPresented;
     this.headerPresentationGeneration += 1;
     this.presentedValue = value;
+    if (!value) {
+      this.reactions.configure(null);
+    }
     this.progressCard.hostUpdate();
     this.requestUpdate("presented", previous);
     this.presentedChanged(value);
@@ -363,6 +368,7 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
   });
   protected questionPrompts: QuestionPrompt[] = [];
   protected state: ChatPageHost | undefined;
+  protected readonly reactions = new ChatReactionsController();
 
   protected resolveChatReadTarget(): ReturnType<typeof resolveUiConversationIdentity> | undefined {
     const state = this.state;
@@ -587,6 +593,43 @@ export abstract class ChatPaneBase extends OpenClawLightDomElement {
         () => this.resolveBoardProvider(),
         (provider) => provider.events.subscribe((event) => this.handleBoardCommand(event)),
       );
+  }
+
+  protected configureChatReactions(
+    state: ChatPageHost,
+    options: { enabled: boolean; canReact: boolean },
+  ) {
+    const reactionClient = state.client;
+    const reactionSessionId = state.currentSessionId;
+    const reactionTarget = this.resolveChatReadTarget();
+    const reactionEpoch = state.connectionEpoch;
+    const reactionSessionKey = state.sessionKey;
+    this.reactions.configure(
+      options.enabled &&
+        state.connected &&
+        reactionClient &&
+        reactionSessionId &&
+        reactionTarget?.agentId &&
+        this.presented
+        ? {
+            client: reactionClient,
+            connectionEpoch: reactionEpoch ?? 0,
+            sessionKey: reactionTarget.sessionKey,
+            agentId: reactionTarget.agentId,
+            sessionId: reactionSessionId,
+            canReact: options.canReact,
+            isCurrent: () =>
+              this.state === state &&
+              state.client === reactionClient &&
+              state.connected &&
+              state.connectionEpoch === reactionEpoch &&
+              state.sessionKey === reactionSessionKey &&
+              state.currentSessionId === reactionSessionId &&
+              this.resolveChatReadTarget()?.agentId === reactionTarget.agentId &&
+              this.presented,
+          }
+        : null,
+    );
   }
 
   protected abstract refreshSessionPullRequests(options?: {
