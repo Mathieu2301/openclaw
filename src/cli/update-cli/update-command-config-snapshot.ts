@@ -15,6 +15,7 @@ import {
 import { ConfigMutationConflictError } from "../../config/mutation-conflict.js";
 import { resolveConfigPath } from "../../config/paths.js";
 import {
+  BackupConfigCaptureError,
   readBackupConfigCaptureFile,
   resolveBackupConfigCapture,
 } from "../../infra/backup-config-capture.js";
@@ -59,7 +60,8 @@ export async function captureUpdateConfigSnapshot(
         configPath,
         env,
         observe: false,
-        pluginValidation: "skip",
+        // The candidate may already have migrated state beyond this updater's schema.
+        pluginValidation: "core-only",
       }).readConfigFileSnapshotForWrite();
       if (selected.snapshot.raw !== root.raw) {
         throw new ConfigMutationConflictError("config changed while preparing update capture");
@@ -70,7 +72,7 @@ export async function captureUpdateConfigSnapshot(
       }
       const capture = await resolveBackupConfigCapture(selected, {
         env,
-        pluginValidation: "skip",
+        pluginValidation: "core-only",
         allowIncludeAliases: true,
       });
       const rootTarget = await fs.realpath(configPath);
@@ -112,7 +114,12 @@ export async function captureUpdateConfigSnapshot(
       };
     },
     { env },
-  );
+  ).catch((error: unknown) => {
+    if (error instanceof BackupConfigCaptureError || error instanceof ConfigMutationConflictError) {
+      return { ...root, doctorOwned: false };
+    }
+    throw error;
+  });
 }
 
 export async function createUpdateConfigSnapshot(

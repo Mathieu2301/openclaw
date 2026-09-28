@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import * as backupConfigCapture from "../../infra/backup-config-capture.js";
 import * as tempRoot from "../../infra/tmp-openclaw-dir.js";
 import {
   createDeferredConfiguredPluginRepairDoctorResult,
@@ -25,7 +27,9 @@ import {
 } from "../../process/exec-result.js";
 import * as processRunner from "../../process/exec.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { OPENCLAW_STATE_SCHEMA_VERSION } from "../../state/openclaw-state-db-contract.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { runUpdateStep } from "./shared.js";
 import { runPackageUpdateDoctor } from "./update-command-package.js";
 import { createUpdateRunProgress } from "./update-command-run.js";
@@ -51,14 +55,45 @@ async function createDoctorFixture() {
   return { root, env };
 }
 
-it.each(["missing", "malformed"] as const)(
-  "runs Doctor for a %s include without claiming automatic config rollback",
+it.each(["missing", "malformed", "newer-schema", "changed-during-capture"] as const)(
+  "runs Doctor with %s include capture without broadening rollback ownership",
   async (includeState) => {
     const { root, env } = await createDoctorFixture();
     const originalRaw = '{"logging":{"$include":"./logging.json"}}\n';
+    const includePath = path.join(root, "logging.json");
+    const originalInclude = '{"level":"info"}\n';
+    const operatorInclude = '{"level":"debug"}\n';
+    const completeGraph = includeState === "newer-schema";
+    const databasePath = resolveOpenClawStateSqlitePath(env);
+    const newerSchema = OPENCLAW_STATE_SCHEMA_VERSION + 1;
     await fs.writeFile(env.OPENCLAW_CONFIG_PATH, originalRaw);
     if (includeState === "malformed") {
-      await fs.writeFile(path.join(root, "logging.json"), '{"level": }\n');
+      await fs.writeFile(includePath, '{"level": }\n');
+    } else if (completeGraph || includeState === "changed-during-capture") {
+      await fs.writeFile(includePath, originalInclude);
+    }
+    if (completeGraph) {
+      await fs.mkdir(path.dirname(databasePath), { recursive: true });
+      const database = new DatabaseSync(databasePath);
+      try {
+        database.exec(`PRAGMA user_version = ${newerSchema}`);
+      } finally {
+        database.close();
+      }
+    }
+    let includeChanged = false;
+    if (includeState === "changed-during-capture") {
+      const resolvedInclude = await fs.realpath(includePath);
+      const readCaptureFile = backupConfigCapture.readBackupConfigCaptureFile;
+      vi.spyOn(backupConfigCapture, "readBackupConfigCaptureFile").mockImplementation(
+        async (file) => {
+          if (!includeChanged && file.canonicalPath === resolvedInclude) {
+            includeChanged = true;
+            await fs.writeFile(includePath, operatorInclude);
+          }
+          return await readCaptureFile(file);
+        },
+      );
     }
     const invokeDoctor = vi
       .spyOn(processRunner, "runCommandWithTimeout")
@@ -96,18 +131,42 @@ it.each(["missing", "malformed"] as const)(
       expect.objectContaining({
         path: env.OPENCLAW_CONFIG_PATH,
         raw: originalRaw,
-        doctorOwned: false,
+        doctorOwned: completeGraph,
       }),
     );
     expect(step).toMatchObject({ exitCode: 0 });
-    expect(onStepComplete).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        warnings: expect.arrayContaining([
-          expect.stringContaining("automatic config rollback is unavailable"),
-        ]),
-      }),
-    );
+    if (completeGraph) {
+      expect(onConfigSnapshot.mock.calls[0]?.[0]).toMatchObject({
+        includedFiles: [
+          {
+            raw: originalInclude,
+            doctorOwned: true,
+            pathSnapshot: { targetPath: await fs.realpath(includePath) },
+          },
+        ],
+      });
+      const database = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        expect(database.prepare("PRAGMA user_version").get()).toEqual({
+          user_version: newerSchema,
+        });
+      } finally {
+        database.close();
+      }
+    } else {
+      expect(onStepComplete).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          warnings: expect.arrayContaining([
+            expect.stringContaining("automatic config rollback is unavailable"),
+          ]),
+        }),
+      );
+    }
     await expect(fs.readFile(env.OPENCLAW_CONFIG_PATH, "utf8")).resolves.toBe(originalRaw);
+    if (includeState === "changed-during-capture") {
+      expect(includeChanged).toBe(true);
+      await expect(fs.readFile(includePath, "utf8")).resolves.toBe(operatorInclude);
+    }
   },
 );
 

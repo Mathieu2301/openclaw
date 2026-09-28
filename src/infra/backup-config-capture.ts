@@ -26,8 +26,12 @@ export type BackupConfigCapture = {
   assertRootAlias?: () => Promise<void>;
 };
 
+export class BackupConfigCaptureError extends Error {
+  override name = "BackupConfigCaptureError";
+}
+
 function captureError(sourcePath: string, detail: string, cause?: unknown): Error {
-  return new Error(
+  return new BackupConfigCaptureError(
     `Cannot capture required config file ${sourcePath}: ${detail}. Fix the include graph or stop concurrent edits, then retry backup.`,
     { cause },
   );
