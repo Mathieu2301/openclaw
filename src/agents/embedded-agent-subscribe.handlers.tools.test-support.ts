@@ -6,29 +6,26 @@ import type {
   ToolHandlerContext,
 } from "./embedded-agent-subscribe.handlers.types.js";
 
-type ToolExecutionEndEvent = Omit<Extract<AgentEvent, { type: "tool_execution_end" }>, "type">;
+export type ToolExecutionEndEvent = Omit<
+  Extract<AgentEvent, { type: "tool_execution_end" }>,
+  "type" | "isError"
+> & { isError?: boolean };
 
 export function endTool(ctx: ToolHandlerContext, event: ToolExecutionEndEvent) {
-  return handleToolExecutionEnd(ctx, { type: "tool_execution_end", ...event });
+  return handleToolExecutionEnd(ctx, { type: "tool_execution_end", isError: false, ...event });
 }
 
-export function createTestContext(): {
-  ctx: ToolHandlerContext;
-  warn: ReturnType<typeof vi.fn>;
-  onBlockReplyFlush: ReturnType<
-    typeof vi.fn<NonNullable<ToolHandlerContext["params"]["onBlockReplyFlush"]>>
-  >;
-  onAgentEvent: ReturnType<typeof vi.fn>;
-  onExecutionPhase: ReturnType<typeof vi.fn>;
-  trace: ReturnType<typeof vi.fn>;
-  isEnabled: ReturnType<typeof vi.fn>;
-} {
+export function resultWithDetails(details: Record<string, unknown>) {
+  return { details };
+}
+
+export function createTestContext() {
   const onBlockReplyFlush = vi.fn<NonNullable<ToolHandlerContext["params"]["onBlockReplyFlush"]>>();
   const onAgentEvent = vi.fn();
   const onExecutionPhase = vi.fn();
   const warn = vi.fn();
   const trace = vi.fn();
-  const isEnabled = vi.fn(() => false);
+  const isEnabled = vi.fn<NonNullable<ToolHandlerContext["log"]["isEnabled"]>>(() => false);
   const ctx: ToolHandlerContext = {
     params: {
       runId: "run-test",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createTestContext,
   endTool,
+  resultWithDetails,
 } from "./embedded-agent-subscribe.handlers.tools.test-support.js";
 
 describe("handleToolExecutionEnd sessions_spawn terminal success tracking", () => {
@@ -25,16 +26,28 @@ describe("handleToolExecutionEnd sessions_spawn terminal success tracking", () =
       await endTool(ctx, {
         toolName: "sessions_spawn",
         toolCallId: "tool-spawn-accepted",
-        isError: false,
-        result: {
-          details: {
-            status: "accepted",
-            runId: " run-child ",
-            childSessionKey: " agent:claude:subagent:child ",
-            expectsCompletionMessage: true,
-            ...presentation,
-          },
-        },
+        result: resultWithDetails({
+          status: "accepted",
+          runId: " run-child ",
+          childSessionKey: " agent:claude:subagent:child ",
+          expectsCompletionMessage: true,
+          ...presentation,
+        }),
+      });
+
+      await endTool(ctx, {
+        toolName: "sessions_spawn",
+        toolCallId: "spawn-error",
+        result: resultWithDetails({
+          status: "error",
+          runId: "run-child",
+          childSessionKey: "agent:claude:subagent:child",
+        }),
+      });
+      await endTool(ctx, {
+        toolName: "sessions_spawn",
+        toolCallId: "spawn-malformed",
+        result: { details: { status: "accepted", runId: "run-child", childSessionKey: " " } },
       });
 
       expect(ctx.state.acceptedSessionSpawns).toEqual([
@@ -51,35 +64,4 @@ describe("handleToolExecutionEnd sessions_spawn terminal success tracking", () =
       });
     },
   );
-
-  it("does not record failed or malformed sessions_spawn results", async () => {
-    const { ctx } = createTestContext();
-
-    await endTool(ctx, {
-      toolName: "sessions_spawn",
-      toolCallId: "tool-spawn-failed",
-      isError: false,
-      result: {
-        details: {
-          status: "error",
-          runId: "run-child",
-          childSessionKey: "agent:claude:subagent:child",
-        },
-      },
-    });
-    await endTool(ctx, {
-      toolName: "sessions_spawn",
-      toolCallId: "tool-spawn-malformed",
-      isError: false,
-      result: {
-        details: {
-          status: "accepted",
-          runId: "run-child",
-          childSessionKey: " ",
-        },
-      },
-    });
-
-    expect(ctx.state.acceptedSessionSpawns).toEqual([]);
-  });
 });
