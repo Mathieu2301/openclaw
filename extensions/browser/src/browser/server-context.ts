@@ -153,7 +153,18 @@ function createProfileContext(
       }
       return await withLease(options?.signal, async (signal) => {
         // Explicit targets can come from history; lookup must not launch or restart a browser.
-        // Resolve the tab first: a short CDP health probe can time out while tab enumeration succeeds.
+        // A stopped managed browser must retain its historical-target error contract.
+        // Remote CDP instead resolves first: a short health probe can time out while
+        // tab enumeration still succeeds.
+        if (
+          targetId !== undefined &&
+          !getBrowserProfileCapabilities(profile).isRemote &&
+          !(await rawAvailability.isReachable(undefined, { signal }))
+        ) {
+          throw new BrowserProfileUnavailableError(
+            `Browser profile "${profile.name}" is not running. Start the browser or open a new tab, then select a current target.`,
+          );
+        }
         try {
           return await rawSelection.ensureTabAvailable(targetId, { ...options, signal });
         } catch (error) {
