@@ -16,8 +16,8 @@ import {
   resolveTaskScriptPath,
   writeTaskXmlTempFile,
 } from "./schtasks-layout.js";
+import { describeUnverifiedPortListeners } from "./schtasks-port-diagnostics.js";
 import {
-  describeUnverifiedPortListeners,
   findInstalledProcessPid,
   isNodeHostArgv,
   readWindowsProcessSnapshot,
