@@ -65,6 +65,8 @@ selected entry's snapshots.
 
 This is a versioned representation change under the
 [material-change checkpoint](/reference/database-schemas/storage-changes#review-checkpoint-for-material-changes).
+The accepted storage split and migration are recorded in
+[#160358](https://github.com/openclaw/openclaw/pull/160358).
 Use the existing verified backup and candidate Doctor update flow, including the
 [published updater migration rules](/reference/database-schemas/versioning#schema-bumps-and-older-updaters).
 Interrupted extraction rolls back. Older builds refuse schema 24; rollback

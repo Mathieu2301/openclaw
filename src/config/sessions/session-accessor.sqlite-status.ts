@@ -95,7 +95,7 @@ export function parseSessionEntryJson(
     return null;
   }
   if (projection === "list") {
-    // Raw repair fixtures may still contain unsplit fields; they never enter metadata views.
+    // Rejected legacy rows may retain unsplit fields; metadata views still omit them.
     delete record.sessionDiffBaseline;
     delete record.skillsSnapshot;
     delete record.systemPromptReport;
