@@ -26,6 +26,7 @@ import type { GatewayRequestContext } from "../server-methods/types.js";
 import { WorkerTunnelOwnerDisconnectedError, type WorkerTunnelHandle } from "./tunnel-contract.js";
 import { success } from "./tunnel.test-support.js";
 import {
+  createWorkerTurnTunnel,
   ENVIRONMENT_ID,
   MANIFEST_REF,
   OWNER_EPOCH,
@@ -34,8 +35,6 @@ import {
   attachedEnvironment,
   cleanupWorkerTurnLauncherTest,
   createWorkerSessionTurnPlacementProvider,
-  measureLaunchTurn,
-  readLaunchToolNames,
   placements,
   root,
   seedActivePlacement,
@@ -799,18 +798,13 @@ describe("worker turn launcher local placement", () => {
         },
       );
       const launchTurn = vi.fn();
-      const tunnel: WorkerTunnelHandle = {
-        environmentId: ENVIRONMENT_ID,
-        ownerEpoch: OWNER_EPOCH,
-        measureLaunchTurn,
-        readLaunchToolNames,
+      const tunnel: WorkerTunnelHandle = createWorkerTurnTunnel({
         launchTurn,
         runWorkspaceCommand: vi.fn(async () => success()),
         quiesceWorkspace,
         syncWorkspace: vi.fn(),
         reconcileWorkspace,
-        stop: vi.fn(async () => {}),
-      };
+      });
       const environment = {
         ...attachedEnvironment(),
         providerId,

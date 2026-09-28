@@ -24,6 +24,7 @@ import type { PreparedWorkerComputer } from "./computer-transport.js";
 import * as skillTransfer from "./skill-resource-transfer.js";
 import { WorkerRunnerCapacityError, type WorkerTunnelHandle } from "./tunnel-contract.js";
 import {
+  createWorkerTurnTunnel,
   ENVIRONMENT_ID,
   MANIFEST_REF,
   root,
@@ -38,7 +39,6 @@ import {
   cleanupWorkerTurnLauncherTest,
   computerDescriptor,
   createWorkerSessionTurnPlacementProvider,
-  measureLaunchTurn,
   readLaunchToolNames,
   placements,
   seedActivePlacement,
@@ -79,19 +79,13 @@ describe("worker launch capabilities", () => {
         }
         throw new WorkerRunnerCapacityError();
       });
-      const tunnel: WorkerTunnelHandle = {
-        environmentId: ENVIRONMENT_ID,
-        ownerEpoch: OWNER_EPOCH,
+      const tunnel: WorkerTunnelHandle = createWorkerTurnTunnel({
         launchTurn,
-        measureLaunchTurn,
-        readLaunchToolNames,
         stageAttachments: vi.fn(),
-        runWorkspaceCommand: vi.fn(),
         quiesceWorkspace: vi.fn(),
         syncWorkspace: vi.fn(),
         reconcileWorkspace: vi.fn(),
-        stop: vi.fn(async () => {}),
-      };
+      });
       const environments = {
         ...unusedEnvironments(),
         get: vi.fn(() => attachedEnvironment()),
@@ -144,22 +138,17 @@ describe("worker launch capabilities", () => {
         expect(plan.assignment.toolAuthority.allowedToolNames.includes("computer")).toBe(allowed);
         throw new WorkerRunnerCapacityError();
       });
-      const tunnel: WorkerTunnelHandle = {
-        environmentId: ENVIRONMENT_ID,
-        ownerEpoch: OWNER_EPOCH,
+      const tunnel: WorkerTunnelHandle = createWorkerTurnTunnel({
         launchTurn,
-        measureLaunchTurn,
         readLaunchToolNames: async () =>
           (await readLaunchToolNames()).filter(
             (name) => supervisorAdmitsComputer || name !== "computer",
           ),
         stageAttachments: vi.fn(async () => {}),
-        runWorkspaceCommand: vi.fn(),
         quiesceWorkspace: vi.fn(),
         syncWorkspace: vi.fn(),
         reconcileWorkspace: vi.fn(),
-        stop: vi.fn(async () => {}),
-      };
+      });
       const environments = {
         ...unusedEnvironments(),
         get: vi.fn(() => environment),
@@ -348,11 +337,7 @@ describe("worker launch capabilities", () => {
           };
         },
       );
-      const tunnel: WorkerTunnelHandle = {
-        environmentId: ENVIRONMENT_ID,
-        ownerEpoch: OWNER_EPOCH,
-        measureLaunchTurn,
-        readLaunchToolNames,
+      const tunnel: WorkerTunnelHandle = createWorkerTurnTunnel({
         launchTurn,
         runWorkspaceCommand: async (command) =>
           await runCommandWithTimeout([...command.argv], {
@@ -364,8 +349,7 @@ describe("worker launch capabilities", () => {
         quiesceWorkspace,
         syncWorkspace: vi.fn(),
         reconcileWorkspace,
-        stop: vi.fn(async () => {}),
-      };
+      });
       const secret = ["synthetic", "cleanup", "credential"].join("-");
       const cleanupDetail = `native close failed: HTTP 401 request timed out Authorization: Bearer ${secret} ${"x".repeat(3000)}`;
       const cleanupError = new AggregateError([new Error(cleanupDetail)], "computer close failed");

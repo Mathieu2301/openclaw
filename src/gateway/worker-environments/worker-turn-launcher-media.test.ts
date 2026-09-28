@@ -26,17 +26,14 @@ import { projectWorkerSessionTurnClaim } from "./placement-record.js";
 import { createWorkerSessionPlacementGate } from "./placement-worker-gate.js";
 import type { WorkerTurnTunnelHandle } from "./tunnel-contract.js";
 import {
-  ENVIRONMENT_ID,
-  MANIFEST_REF,
-  OWNER_EPOCH,
+  createWorkerTurnTunnel,
+  reconcileUnchangedLocalWorkspace,
   SESSION_ID,
   SESSION_KEY,
   attachedEnvironment,
   cleanupWorkerTurnLauncherTest,
   createWorkerSessionTurnPlacementProvider,
   credential,
-  measureLaunchTurn,
-  readLaunchToolNames,
   openSessionManager,
   placements,
   root,
@@ -50,10 +47,7 @@ function harness() {
   const launches: WorkerLaunchPlan[] = [];
   const remoteFiles = new Map<string, Buffer>();
   const environment = attachedEnvironment();
-  const tunnel: WorkerTurnTunnelHandle = {
-    environmentId: ENVIRONMENT_ID,
-    ownerEpoch: OWNER_EPOCH,
-    runWorkspaceCommand: vi.fn(),
+  const tunnel: WorkerTurnTunnelHandle = createWorkerTurnTunnel({
     syncWorkspace: vi.fn(async () => {
       throw new Error("must not resync active workspace");
     }),
@@ -69,21 +63,7 @@ function harness() {
       }
     }),
     quiesceWorkspace: vi.fn(async () => ({ assertActive: async () => {}, resume: async () => {} })),
-    reconcileWorkspace: vi.fn(async (request) => {
-      if (request.source.kind !== "local") {
-        throw new Error("expected a local workspace source");
-      }
-      request.source.journal.commit(MANIFEST_REF);
-      return {
-        manifestRef: MANIFEST_REF,
-        changed: false,
-        verifyStable: async () => {},
-        verifyLocalStable: async () => {},
-      };
-    }),
-    stop: vi.fn(async () => {}),
-    measureLaunchTurn,
-    readLaunchToolNames,
+    reconcileWorkspace: vi.fn(reconcileUnchangedLocalWorkspace),
     launchTurn: vi.fn<WorkerTurnTunnelHandle["launchTurn"]>(async (request) => {
       launches.push(structuredClone(request.plan));
       request.onDispatchReady?.();
@@ -112,7 +92,7 @@ function harness() {
         termination: "exit",
       };
     }),
-  };
+  });
   const provider = createWorkerSessionTurnPlacementProvider({
     placements,
     environments: {
