@@ -30,6 +30,8 @@ export type SessionSharingEntry = Pick<
   | "sandbox"
   | "spawnedBy"
   | "spawnDepth"
+  | "parentSessionKey"
+  | "sessionStartedAt"
 >;
 
 export function projectSessionSharingEntry(entry: SessionEntry): SessionSharingEntry {
@@ -44,6 +46,8 @@ export function projectSessionSharingEntry(entry: SessionEntry): SessionSharingE
     sandbox: entry.sandbox,
     spawnedBy: entry.spawnedBy,
     spawnDepth: entry.spawnDepth,
+    parentSessionKey: entry.parentSessionKey,
+    sessionStartedAt: entry.sessionStartedAt,
   };
 }
 
