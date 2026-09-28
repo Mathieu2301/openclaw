@@ -435,6 +435,7 @@ function createWorkerContext(
   );
   return {
     workerRun: owner.createWorkerRun(compilerEnv),
+    normalCompletion: true,
     spawn: owner.spawn,
     exitBySignal: owner.exitBySignal,
     installCleanup: owner.installCleanup,
@@ -486,6 +487,7 @@ async function runChild(
         if (!result.groupJoined) {
           throw new Error("CI group descendant completion is unverified");
         }
+        context.normalCompletion &&= typeof result.code === "number" && result.signal === null;
         return result.code ?? 1;
       }),
     );
@@ -639,6 +641,14 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
   let unverifiedChild = false;
   let scratchCleanupPending = options.scratchDir === undefined;
   let interrupted: NodeJS.Signals | undefined;
+  let exitCode = 0;
+  const completion = {
+    version: 1,
+    planned: admittedPlans.length,
+    completed: 0,
+    invocations: 0,
+    failedInvocations: 0,
+  };
   const onSignal = (signal: NodeJS.Signals) => {
     interrupted ??= signal;
   };
@@ -663,7 +673,6 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
     const runner: typeof runChild =
       options.runChild ??
       ((args, childEnv, label, timingKey) => runChild(args, childEnv, label, timingKey, context));
-    let exitCode = 0;
     await runVitestPlans(admittedPlans, {
       concurrency,
       isExclusive: exclusive,
@@ -796,6 +805,7 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
                 ? "node-subset:"
                 : "";
           unverifiedChild ||= !context;
+          completion.invocations++;
           const code = await runner(
             args,
             childEnv,
@@ -817,9 +827,11 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
           // A dual-runtime envelope always completes both ordinary test runs;
           // its first failure still stops admission of later envelopes.
           if (code !== 0) {
+            completion.failedInvocations++;
             exitCode = exitCode || code;
           }
         }
+        completion.completed++;
       },
     });
     if (persistentCacheRoot && baseEnv[FS_MODULE_CACHE_WRITER_ENV_KEY] === "1") {
@@ -848,7 +860,6 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
         console.warn(`[shard:cache] failed to prune Node compile cache: ${String(error)}`);
       }
     }
-    return exitCode;
   } finally {
     try {
       await context?.workerRun.dispose();
@@ -878,6 +889,18 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
       }
     }
   }
+  // Publish after disposal; custom or portable runners cannot certify child joins.
+  if (
+    completion.completed === completion.planned &&
+    context?.normalCompletion &&
+    !interrupted &&
+    !unverifiedChild &&
+    !options.runChild &&
+    !scratchCleanupPending
+  ) {
+    process.stdout.write(`[shard:completion] ${JSON.stringify(completion)}\n`);
+  }
+  return exitCode;
 }
 
 if (isDirectRunUrl(process.argv[1], import.meta.url)) {

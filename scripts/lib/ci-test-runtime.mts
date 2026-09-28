@@ -60,6 +60,7 @@ export const BUN_UI_TEST_ENV = {
 const gatewayCoreConfig = "test/vitest/vitest.gateway-core.config.ts";
 const gatewayClientConfig = "test/vitest/vitest.gateway-client.config.ts";
 const unitFastConfig = "test/vitest/vitest.unit-fast.config.ts";
+const exactTestFilePattern = /^[\w./-]+\.test\.[cm]?[jt]sx?$/u;
 const nativeBunTestHashes: Readonly<Record<string, string>> = nativeBunQualification.tests;
 const nativeBunHelperHashes: Readonly<Record<string, Readonly<Record<string, string>>>> =
   nativeBunQualification.helpers;
@@ -95,7 +96,7 @@ const nativeCompilerTestFiles = [
 const runtimePartitions = new Map<
   string,
   {
-    files: (cwd: string) => string[];
+    files: (cwd: string, includePatterns?: string[]) => string[];
     nodeRequired: ReadonlySet<string> | ((file: string) => boolean);
     includeAfterShard?: true;
   }
@@ -114,7 +115,7 @@ const runtimePartitions = new Map<
   [
     unitFastConfig,
     {
-      files: unitFastFiles,
+      files: (_cwd, includePatterns) => unitFastFiles(includePatterns),
       nodeRequired: new Set([
         ...nativeCompilerTestFiles,
         "src/cli/cli-process-diagnostics.test.ts",
@@ -139,7 +140,7 @@ const runtimePartitions = new Map<
   [
     "test/vitest/vitest.unit-fast-isolated.config.ts",
     {
-      files: () => getUnitFastIsolatedTestFiles(),
+      files: (_cwd, includePatterns) => getUnitFastIsolatedTestFiles(includePatterns),
       nodeRequired: new Set(nativeCompilerTestFiles),
     },
   ],
@@ -152,6 +153,7 @@ const runtimePartitions = new Map<
           .toSorted(),
       // Bun GC can retain released chat and overview payloads; keep their retention proof on Node.
       nodeRequired: new Set([
+        "ui/src/pages/chat/chat-pane-retained-presentation.test.ts",
         "ui/src/pages/chat/chat-thread.test.ts",
         "ui/src/pages/usage/usage-page-details.test.ts",
       ]),
@@ -169,9 +171,12 @@ function partitionRequiresNode(
     : partition.nodeRequired.has(file);
 }
 
-function unitFastFiles(): string[] {
-  const otherOwners = new Set([...getUnitFastTimerTestFiles(), ...getUnitFastIsolatedTestFiles()]);
-  return getUnitFastTestFiles().filter((file) => !otherOwners.has(file));
+function unitFastFiles(includePatterns?: string[]): string[] {
+  const otherOwners = new Set([
+    ...getUnitFastTimerTestFiles(includePatterns),
+    ...getUnitFastIsolatedTestFiles(includePatterns),
+  ]);
+  return getUnitFastTestFiles(includePatterns).filter((file) => !otherOwners.has(file));
 }
 
 function matchesNativeBunSource(file: string, sha256: string, cwd: string): boolean {
@@ -305,7 +310,7 @@ export function resolveCiTestRuntimeSelections(
   if (selection.targets?.length) {
     // Preserve exact target argv and its native owner; broad targets can carry
     // multiple process/filter contracts and stay on Node.
-    if (selection.targets.some((target) => !/^[\w./-]+\.test\.[cm]?[jt]sx?$/u.test(target))) {
+    if (selection.targets.some((target) => !exactTestFilePattern.test(target))) {
       return node;
     }
     const plans = selection.targets.flatMap((target) => buildVitestRunPlans([target], cwd));
@@ -330,7 +335,7 @@ export function resolveCiTestRuntimeSelections(
     ) {
       return node;
     }
-    const files = new Set(partition.files(cwd));
+    const files = new Set(partition.files(cwd, [...selection.targets]));
     if (
       !selection.targets.every(
         (target) => files.has(target) && !partitionRequiresNode(partition, target),
@@ -397,7 +402,14 @@ export function resolveCiTestRuntimeSelections(
   if (!partition || (partition.includeAfterShard && !uiPartition)) {
     return node;
   }
-  const inventory = partition.files(cwd);
+  // Reuse canonical scoped analysis only for exact files; glob envelopes keep
+  // their full inventory and existing matcher semantics.
+  const exactSelection = selection.includePatterns?.every((pattern) =>
+    exactTestFilePattern.test(pattern),
+  )
+    ? [...selection.includePatterns]
+    : undefined;
+  const inventory = partition.files(cwd, exactSelection);
   const requested = new Set(selection.includePatterns ?? []);
   // Canonical file inventories should not reparse every file pair as a glob.
   const exactFiles = selection.includePatterns?.every(
