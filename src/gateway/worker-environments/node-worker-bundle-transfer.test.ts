@@ -4,9 +4,7 @@ import http from "node:http";
 import path from "node:path";
 import * as tar from "tar";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { GATEWAY_CLIENT_IDS } from "../../../packages/gateway-protocol/src/client-info.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
-import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
 import { NodeWorkerBundleInstaller } from "../../node-host/node-worker-bundle-installer.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import {
@@ -16,10 +14,10 @@ import {
 import { hashWorkerBundleManifest } from "../../shared/worker-bundle-hash.js";
 import { reserveTestPortListener } from "../../test-utils/port-claims.js";
 import { NODE_WORKER_BUNDLE_TRANSFER_PATH } from "../../worker/node-bundle-install-protocol.js";
-import type { NodeWorkerSupervisorNodeProof } from "../node-registry-private.js";
 import { createArtifactTransferHttpCallback } from "./artifact-transfer-http.js";
 import { handleNodeWorkerBundleTransferHttpRequest } from "./node-worker-bundle-transfer-http.js";
 import { createNodeWorkerBundleTransferService } from "./node-worker-bundle-transfer-service.js";
+import { createNodeWorkerBundleTestNode } from "./node-worker-bundle.test-support.js";
 
 describe("node worker bundle transfer", () => {
   let root: string;
@@ -60,17 +58,7 @@ describe("node worker bundle transfer", () => {
       generateToken: () => "A".repeat(43),
     });
     onTestFinished(() => service.closeAll());
-    const node: NodeWorkerSupervisorNodeProof = {
-      nodeId: "node-1",
-      connId: "conn-1",
-      pairingIdentity: "pairing-1",
-      pairingGeneration: "generation-1",
-      clientId: GATEWAY_CLIENT_IDS.NODE_HOST,
-      clientMode: "node",
-      protocolFeature: NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE,
-      workerHost: { enabled: true, capacity: { total: 2, available: 2 } },
-      commands: [],
-    };
+    const node = createNodeWorkerBundleTestNode();
     const progress: number[] = [];
     const prepared = service.prepare({
       node,

@@ -99,6 +99,7 @@ type GatewayRequestContextRuntime = Pick<
 > &
   Pick<
     GatewayCoreRuntime,
+    | "scheduler"
     | "getSessionRowProjection"
     | "forgetConnectionAncestors"
     | "refreshGatewayHealthSnapshotWithRuntime"
@@ -247,7 +248,7 @@ export function createGatewayRequestContext(
     invalidateSessionsForDevice: invalidateDeviceTransports,
     disconnectSessionsForDevice: disconnectDeviceTransports,
   } = runtime.watchNodeHttpRuntime;
-  const scopeUpgradeCoordinator = new ScopeUpgradeCoordinator();
+  const scopeUpgradeCoordinator = new ScopeUpgradeCoordinator(runtime.scheduler);
   const context: GatewayRequestContext = {
     trackExecution: (run) => connectionWork.track(run),
     deps: runtime.deps,

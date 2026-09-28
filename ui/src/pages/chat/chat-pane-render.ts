@@ -587,6 +587,7 @@ export class ChatPane extends ChatPaneLayoutRender {
       showNewMessages: state.chatNewMessagesBelow,
       onScrollToBottom: state.scrollToBottom,
       ...this.chatState.attachmentInputProps(state),
+      cameraActive: this.conversationPresented,
       onRemoveAttachment: this.removeBrowserAnnotation,
       onSend: (followUpModeOverride, submissionAction) =>
         !composerAvailability.canSend ||

@@ -21,7 +21,6 @@ export type WorkerSessionPlacementReader = {
   registerTurnClaimClosedHandler?: (
     handler: (claim: import("./placement-record.js").WorkerSessionTurnClaim) => void,
   ) => () => void;
-  getPlacementMoves?(sessionIds: readonly string[]): ReadonlyMap<string, WorkerPlacementMoveIntent>;
 };
 
 export type WorkerPlacementDiskSpaceReader = {
@@ -301,6 +300,5 @@ export function projectWorkerSessionPlacement(
         : { state: "reclaimed", ...retained, ...terminal };
     }
   }
-  // Exhaustive over placement states; the return satisfies consistent-return.
   return record satisfies never;
 }
