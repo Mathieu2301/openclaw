@@ -11,13 +11,7 @@ function normalizeRuntimeBasename(execPath: string): string {
 /** Returns whether an executable path names a Node runtime binary. */
 export function isNodeRuntime(execPath: string): boolean {
   const base = normalizeRuntimeBasename(execPath);
-  return (
-    base === "node" ||
-    base === "node.exe" ||
-    base === "nodejs" ||
-    base === "nodejs.exe" ||
-    NODE_VERSIONED_PATTERN.test(base)
-  );
+  return /^node(?:js)?(?:\.exe)?$/.test(base) || NODE_VERSIONED_PATTERN.test(base);
 }
 
 /** Returns whether an executable path names a Bun runtime binary. */
@@ -104,7 +98,14 @@ export function resolveRuntimeScriptPosition(args: string[]): {
       operands.push({ value: arg.slice(2), module: true });
     } else if (RUNTIME_VALUE_OPTIONS.has(option)) {
       const value = equals < 0 ? (args[++index] ?? "") : arg.slice(equals + 1);
-      if (RUNTIME_MODULE_OPTIONS.has(option) && (!bun || option !== "--loader")) {
+      // These reporters have been built in since Node introduced --test-reporter.
+      const builtinReporter =
+        !bun && option === "--test-reporter" && /^(?:dot|spec|tap)$/.test(value);
+      if (
+        RUNTIME_MODULE_OPTIONS.has(option) &&
+        !builtinReporter &&
+        (!bun || option !== "--loader")
+      ) {
         operands.push({ value, module: true });
       }
     } else if (arg.startsWith("-")) {
