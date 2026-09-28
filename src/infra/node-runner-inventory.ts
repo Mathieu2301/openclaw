@@ -1,8 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { WORKER_BUNDLE_PREWARM_VERSION } from "../../packages/gateway-protocol/src/schema/worker-admission.js";
-import { parseWorkerSlotSummary } from "../shared/node-list-parse.js";
-
-export { NODE_WORKER_CAPACITY_MAX } from "../shared/node-list-parse.js";
+import { parseWorkerCapacity } from "../../packages/gateway-protocol/src/worker-capacity.js";
 
 export const NODE_RUNNER_INVENTORY_UPDATE_METHOD = "node.runnerInventory.update";
 export const NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE = "node-worker-supervisor-v6";
@@ -18,6 +16,22 @@ export const NODE_WORKER_BUNDLE_STATUS_VERSION = 1;
 export const NODE_WORKER_PORTAL_STREAM_VERSION = 1;
 export const NODE_WORKER_ENVIRONMENT_SESSION_VERSION = 1;
 export const NODE_WORKER_PREPARED_WORKSPACE_VERSION = 1;
+export const NODE_WORKER_HOST_DISABLED_REASON_MAX_LENGTH = 1_024;
+
+const NODE_WORKER_VERSIONED_CAPABILITIES = [
+  ["bundlePrewarm", WORKER_BUNDLE_PREWARM_VERSION],
+  ["bundleRetention", NODE_WORKER_BUNDLE_RETENTION_VERSION],
+  ["bundleStatus", NODE_WORKER_BUNDLE_STATUS_VERSION],
+  ["portalStream", NODE_WORKER_PORTAL_STREAM_VERSION],
+  ["environmentSession", NODE_WORKER_ENVIRONMENT_SESSION_VERSION],
+  ["preparedWorkspace", NODE_WORKER_PREPARED_WORKSPACE_VERSION],
+] as const;
+
+type NodeWorkerVersionedCapabilities = {
+  [
+    Capability in (typeof NODE_WORKER_VERSIONED_CAPABILITIES)[number] as Capability[0]
+  ]?: Capability[1];
+};
 
 export const NODE_RUNNER_UPDATE_REQUIRED_ISSUE = {
   code: "update-required",
@@ -26,25 +40,21 @@ export const NODE_RUNNER_UPDATE_REQUIRED_ISSUE = {
   headlessReconnectCommand: "openclaw node restart",
 } as const;
 
-export type NodeRunnerInventoryIssue = typeof NODE_RUNNER_UPDATE_REQUIRED_ISSUE;
+export type NodeRunnerInventoryIssue =
+  | typeof NODE_RUNNER_UPDATE_REQUIRED_ISSUE
+  | { code: "worker-host-unavailable"; message: string };
 export type NodeWorkerCapacitySnapshot = Readonly<{
   total: number;
   available: number;
 }>;
 
 export type NodeWorkerHostDeclaration =
-  | { enabled: false }
-  | {
+  | { enabled: false; reason?: string }
+  | (NodeWorkerVersionedCapabilities & {
       enabled: true;
       capacity: NodeWorkerCapacitySnapshot;
-      bundlePrewarm?: typeof WORKER_BUNDLE_PREWARM_VERSION;
-      bundleRetention?: typeof NODE_WORKER_BUNDLE_RETENTION_VERSION;
-      bundleStatus?: typeof NODE_WORKER_BUNDLE_STATUS_VERSION;
-      portalStream?: typeof NODE_WORKER_PORTAL_STREAM_VERSION;
-      environmentSession?: typeof NODE_WORKER_ENVIRONMENT_SESSION_VERSION;
-      preparedWorkspace?: typeof NODE_WORKER_PREPARED_WORKSPACE_VERSION;
       capturedExecPolicy?: true;
-    };
+    });
 
 export type NodeRunnerInventoryDeclaration =
   | { protocolFeatures: readonly [] }
@@ -64,64 +74,50 @@ function parseWorkerHostDeclaration(value: unknown): NodeWorkerHostDeclaration |
   }
   const keys = Object.keys(value);
   if (!value.enabled) {
-    return keys.length === 1 && keys[0] === "enabled" ? { enabled: false } : null;
+    if (
+      keys.some((key) => key !== "enabled" && key !== "reason") ||
+      (value.reason !== undefined &&
+        (typeof value.reason !== "string" ||
+          !value.reason.trim() ||
+          value.reason.length > NODE_WORKER_HOST_DISABLED_REASON_MAX_LENGTH))
+    ) {
+      return null;
+    }
+    return {
+      enabled: false,
+      ...(typeof value.reason === "string" ? { reason: value.reason } : {}),
+    };
   }
-  const capacity = parseWorkerSlotSummary(value.capacity);
+  const capacity = parseWorkerCapacity(value.capacity);
   if (
     !capacity ||
-    keys.length < 2 ||
-    keys.length > 9 ||
     !keys.includes("enabled") ||
     !keys.includes("capacity") ||
     keys.some(
       (key) =>
         key !== "enabled" &&
         key !== "capacity" &&
-        key !== "bundlePrewarm" &&
-        key !== "bundleRetention" &&
-        key !== "bundleStatus" &&
-        key !== "portalStream" &&
-        key !== "environmentSession" &&
-        key !== "preparedWorkspace" &&
-        key !== "capturedExecPolicy",
+        key !== "capturedExecPolicy" &&
+        !NODE_WORKER_VERSIONED_CAPABILITIES.some(([name]) => name === key),
     ) ||
-    (value.bundlePrewarm !== undefined && value.bundlePrewarm !== WORKER_BUNDLE_PREWARM_VERSION) ||
-    (value.bundleRetention !== undefined &&
-      value.bundleRetention !== NODE_WORKER_BUNDLE_RETENTION_VERSION) ||
-    (value.bundleStatus !== undefined &&
-      value.bundleStatus !== NODE_WORKER_BUNDLE_STATUS_VERSION) ||
-    (value.portalStream !== undefined &&
-      value.portalStream !== NODE_WORKER_PORTAL_STREAM_VERSION) ||
-    (value.environmentSession !== undefined &&
-      value.environmentSession !== NODE_WORKER_ENVIRONMENT_SESSION_VERSION) ||
-    (value.preparedWorkspace !== undefined &&
-      value.preparedWorkspace !== NODE_WORKER_PREPARED_WORKSPACE_VERSION) ||
     (value.capturedExecPolicy !== undefined && value.capturedExecPolicy !== true) ||
     (value.bundleStatus !== undefined && value.bundleRetention === undefined)
   ) {
     return null;
   }
+  const capabilities: NodeWorkerVersionedCapabilities = {};
+  for (const [key, version] of NODE_WORKER_VERSIONED_CAPABILITIES) {
+    if (value[key] !== undefined) {
+      if (value[key] !== version) {
+        return null;
+      }
+      capabilities[key] = version;
+    }
+  }
   return {
     enabled: true,
     capacity,
-    ...(value.bundlePrewarm === WORKER_BUNDLE_PREWARM_VERSION
-      ? { bundlePrewarm: WORKER_BUNDLE_PREWARM_VERSION }
-      : {}),
-    ...(value.bundleRetention === NODE_WORKER_BUNDLE_RETENTION_VERSION
-      ? { bundleRetention: NODE_WORKER_BUNDLE_RETENTION_VERSION }
-      : {}),
-    ...(value.bundleStatus === NODE_WORKER_BUNDLE_STATUS_VERSION
-      ? { bundleStatus: NODE_WORKER_BUNDLE_STATUS_VERSION }
-      : {}),
-    ...(value.portalStream === NODE_WORKER_PORTAL_STREAM_VERSION
-      ? { portalStream: NODE_WORKER_PORTAL_STREAM_VERSION }
-      : {}),
-    ...(value.environmentSession === NODE_WORKER_ENVIRONMENT_SESSION_VERSION
-      ? { environmentSession: NODE_WORKER_ENVIRONMENT_SESSION_VERSION }
-      : {}),
-    ...(value.preparedWorkspace === NODE_WORKER_PREPARED_WORKSPACE_VERSION
-      ? { preparedWorkspace: NODE_WORKER_PREPARED_WORKSPACE_VERSION }
-      : {}),
+    ...capabilities,
     ...(value.capturedExecPolicy === true ? { capturedExecPolicy: true } : {}),
   };
 }
@@ -162,11 +158,13 @@ export function parseNodeRunnerInventoryDeclaration(
     : null;
 }
 
-export function formatNodeRunnerUpdateRequired(
+export function formatNodeRunnerInventoryIssue(
   nodeId: string,
   issue: NodeRunnerInventoryIssue,
 ): string {
-  return `device worker node ${nodeId} requires an update before it can host sessions; run ${issue.updateCommand}, then reconnect it (for a headless node, run ${issue.headlessReconnectCommand})`;
+  return issue.code === "worker-host-unavailable"
+    ? `device worker node ${nodeId} cannot host sessions: ${issue.message}`
+    : `device worker node ${nodeId} requires an update before it can host sessions; run ${issue.updateCommand}, then reconnect it (for a headless node, run ${issue.headlessReconnectCommand})`;
 }
 
 /** Worker execution requires the node to preserve the Gateway's captured exec policy. */

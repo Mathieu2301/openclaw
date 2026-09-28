@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
 import {
@@ -32,8 +33,6 @@ import {
   isNodeWorkerSupervisorProofCurrent,
   resolveNodeRunnerInventoryIssue,
   resolveNodeWorkerSupervisorProof,
-  sameBundleStatusObservation,
-  sameNodeWorkerHostDeclaration,
   type NodeRunnerInventoryRecord,
   type NodeRunnerRegistrySession,
   type NodeRunnerStateChange,
@@ -177,7 +176,7 @@ function updateWorkerRunnerInventory(
       ? {
           workerHost: workerHost.enabled
             ? { ...workerHost, capacity: { ...workerHost.capacity } }
-            : { enabled: false },
+            : { ...workerHost },
         }
       : {}),
   };
@@ -191,7 +190,7 @@ function updateWorkerRunnerInventory(
     !previous ||
     previous.pairingGeneration !== next.pairingGeneration ||
     !sameWorkerProtocolFeatures(previous.protocolFeatures, next.protocolFeatures) ||
-    !sameNodeWorkerHostDeclaration(previous.workerHost, next.workerHost) ||
+    !isDeepStrictEqual(previous.workerHost, next.workerHost) ||
     statusCleared;
   if (changed) {
     state.runnerInventoryByConn.set(node.connId, next);
@@ -485,7 +484,7 @@ export function registerNodeRegistryPrivateRuntime(
         } else {
           state.bundleStatusByConn.delete(node.connId);
         }
-        if (!sameBundleStatusObservation(previous, observation)) {
+        if (!isDeepStrictEqual(previous, observation)) {
           state.runnerState.reconcile(node.nodeId, true);
         }
         return true;

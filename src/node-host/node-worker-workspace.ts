@@ -32,6 +32,7 @@ import {
   runNodeWorkerWorkspaceTransfer,
   serializeNodeWorkerWorkspace,
 } from "./node-worker-transfer-client.js";
+import { createNodeWorkerTempWorkspace } from "./node-worker-workspace-admission.js";
 import { workspaceCommandEnv } from "./node-worker-workspace-commands.js";
 import {
   assertWorkspaceArgv,
@@ -118,6 +119,14 @@ export class NodeWorkerWorkspaceRuntime {
       options.ephemeral === true,
     );
     this.env = snapshotNodeWorkerEnv(env);
+  }
+
+  async checkAdmission(): Promise<void> {
+    const probe = await createNodeWorkerTempWorkspace({
+      rootDir: this.root,
+      prefix: ".hosting-admission-",
+    });
+    await probe.cleanup();
   }
 
   /** Only the fresh provisioning owner may register, before Gateway readiness is committed. */
