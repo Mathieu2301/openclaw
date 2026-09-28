@@ -46,10 +46,12 @@ function commandStdio(start: ServiceChildStart): {
   return { stdio, lineageFd, inheritedLineageFds };
 }
 
-function delay(ms: number): Promise<void> {
+function delay(ms: number, retainOwner = false): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    timer.unref?.();
+    if (!retainOwner) {
+      timer.unref?.();
+    }
   });
 }
 
@@ -185,6 +187,11 @@ export function runServiceChildGroupAnchor(): void {
     // A write callback only proves kernel acceptance. Keep the exact anchor alive until the
     // host records the authoritative spawn failure and acknowledges it on this same channel.
     await Promise.race([startupErrorAcknowledged.promise, retirementReady.promise]);
+    if (subreaper) {
+      while (!(descendantsReaped = subreaper.drain("SIGKILL"))) {
+        await delay(10, true);
+      }
+    }
     await closeAuthority("lineage-lost", hardKill);
   };
 
@@ -216,13 +223,16 @@ export function runServiceChildGroupAnchor(): void {
         ) {
           // Yield so libuv can consume its one direct root. Adopted children stay
           // with the native wait owner even after the caller gives up waiting.
-          await delay(10);
+          await delay(10, true);
         }
         descendantsReaped = true;
         await rootExited.promise;
         await rootResultDelivery;
         await rootSettledDone.promise;
         await lineageDone.promise;
+        if (!lineageClosed) {
+          throw new Error("native owner lost lineage observation before EOF");
+        }
         if (start.ownedWorker && lineageCompletion) {
           let recorded = false;
           try {
@@ -495,7 +505,7 @@ export function runServiceChildGroupAnchor(): void {
         windowsHide: true,
       });
       if (command.pid) {
-        subreaper?.retainLibuvChild(command.pid);
+        subreaper?.retainLibuvChild(command.pid, command);
       }
       // Failed Bun spawns have no stdio. Preserve the spawn error before checking lineage.
       await once(command, "spawn");

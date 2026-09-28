@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import type { NodeWorkerCleanupBinding } from "../../node-host/node-worker-launch-receipt.js";
 
 export type ServiceChildStart = {
@@ -92,6 +93,27 @@ export type ServiceChildRelayMessage =
   | ServiceChildStart
   | ServiceChildRelayRetirement
   | { type: "relay-error"; generation: string; error: string };
+
+export function readServiceChildMessage(
+  raw: unknown,
+): ServiceChildRelayMessage | ServiceChildAnchorMessage {
+  // SAFETY: the spawned relay or Job anchor is the sole writer on each private protocol channel.
+  return raw as ServiceChildRelayMessage | ServiceChildAnchorMessage;
+}
+
+/** The retained private IPC peer owns delivery acknowledgement for these frames. */
+export function sendServiceChildMessage(
+  child: Pick<ChildProcess, "connected" | "send">,
+  message: ServiceChildStart | ServiceChildControlMessage,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!child.connected) {
+      reject(new Error("service child lifecycle IPC is closed"));
+      return;
+    }
+    child.send(message, (error) => (error ? reject(error) : resolve()));
+  });
+}
 
 export function encodeServiceChildMessage(
   message: ServiceChildStart | ServiceChildControlMessage | ServiceChildAnchorMessage,

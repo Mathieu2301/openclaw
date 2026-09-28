@@ -1,3 +1,4 @@
+import type { ChildProcess } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
@@ -36,23 +37,6 @@ function childPids(): number[] {
   return [...children];
 }
 
-function childStartTime(pid: number): string | undefined {
-  let stat: string;
-  try {
-    stat = readFileSync("/proc/" + pid + "/stat", "utf8");
-  } catch (error) {
-    if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) {
-      return undefined;
-    }
-    throw error;
-  }
-  const value = stat.slice(stat.lastIndexOf(")") + 2).split(/\s+/u)[19];
-  if (!value || !/^\d+$/u.test(value)) {
-    throw new Error("Linux process owner could not identify its child");
-  }
-  return value;
-}
-
 /** One dedicated process acquires adoption before launching any application work. */
 export function acquireLinuxChildSubreaper() {
   if (process.platform !== "linux" || process.versions.bun) {
@@ -86,12 +70,19 @@ export function acquireLinuxChildSubreaper() {
   if (getSubreaper(PR_GET_CHILD_SUBREAPER, admitted, 0, 0, 0) !== 0 || admitted[0] !== 1) {
     fail("admission verification");
   }
-  const libuvChildren = new Map<number, string>();
-  const retainLibuvChild = (pid: number) => {
-    const identity = childStartTime(pid);
-    if (identity !== undefined) {
-      libuvChildren.set(pid, identity);
+  const libuvChildren = new Set<number>();
+  const signaledChildren = new Map<number, "SIGTERM" | "SIGKILL">();
+  const retainLibuvChild = (pid: number, child: Pick<ChildProcess, "pid" | "once">) => {
+    if (child.pid !== pid || !Number.isSafeInteger(pid) || pid <= 0) {
+      throw new Error("Linux child ownership requires a spawned root");
     }
+    libuvChildren.add(pid);
+    // libuv reaps before emitting exit, in this same event-loop turn. Retire the
+    // signal reservation here so a newly adopted reuse of this PID gets its own signal.
+    child.once("exit", () => {
+      libuvChildren.delete(pid);
+      signaledChildren.delete(pid);
+    });
   };
   // A loader thread can reap its compiler concurrently with this thread. That
   // would invalidate numeric-PID pinning. Admit only the dedicated built owner,
@@ -125,7 +116,8 @@ export function acquireLinuxChildSubreaper() {
         if (!owns(pid)) {
           continue;
         }
-        if (signal) {
+        const previousSignal = signaledChildren.get(pid);
+        if (signal && previousSignal !== signal && previousSignal !== "SIGKILL") {
           try {
             // No await, reap, or event-loop callback may cross this ownership/signal pair.
             process.kill(pid, signal);
@@ -134,15 +126,19 @@ export function acquireLinuxChildSubreaper() {
               throw error;
             }
           }
+          signaledChildren.set(pid, signal);
         }
-        const libuvIdentity = libuvChildren.get(pid);
-        if (libuvIdentity !== undefined && childStartTime(pid) === libuvIdentity) {
+        if (libuvChildren.has(pid)) {
           continue;
         }
         const reaped = waitpid(pid, null, WNOHANG | WALL);
-        if (reaped < 0) {
+        if (reaped === pid) {
+          signaledChildren.delete(pid);
+        } else if (reaped < 0) {
           const errno = koffi.errno();
-          if (errno !== ECHILD && errno !== EINTR) {
+          if (errno === ECHILD) {
+            signaledChildren.delete(pid);
+          } else if (errno !== EINTR) {
             fail("adopted child reap", errno);
           }
         }

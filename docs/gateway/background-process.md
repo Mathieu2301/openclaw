@@ -113,7 +113,7 @@ After a host exec command finishes, OpenClaw releases its retained process
 scope before reporting completion. Children left behind by shell backgrounding
 (`&`) are stopped with that scope. To continue work across turns, start the
 long-running command with `background: true` and use `process` to collect its
-result. Its group stays owned until the command finishes; sandbox runtime
+result. Its scope stays owned until the command finishes; sandbox runtime
 lifetimes remain with the sandbox backend.
 
 When spawning long-running child processes outside the exec/process tools (CLI respawns, gateway helpers), attach the child-process bridge helper so termination signals forward and listeners detach on exit/close. This avoids orphaned processes on systemd and keeps shutdown consistent across platforms.

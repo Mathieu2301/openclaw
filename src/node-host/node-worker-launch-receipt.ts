@@ -65,6 +65,24 @@ export function isNodeWorkerTerminalState(value: string): value is NodeWorkerTer
   );
 }
 
+export function validateNodeWorkerPlanHash(value: string): void {
+  if (!/^[a-f0-9]{64}$/u.test(value)) {
+    throw new Error("node worker plan hash must be 64 lowercase hexadecimal characters");
+  }
+}
+
+export function validateNodeWorkerProcessIdentity(identity: NodeWorkerProcessIdentity): void {
+  if (
+    !Number.isSafeInteger(identity.pid) ||
+    identity.pid <= 0 ||
+    identity.pid > 2_147_483_647 ||
+    !Number.isSafeInteger(identity.startTime) ||
+    identity.startTime < 0
+  ) {
+    throw new Error("node worker process identity must contain a bounded pid and start time");
+  }
+}
+
 export function validateNodeWorkerContainerIdentity(identity: NodeWorkerContainerIdentity): void {
   if (identity.engine !== "docker" && identity.engine !== "podman") {
     throw new Error("node worker container engine must be docker or podman");

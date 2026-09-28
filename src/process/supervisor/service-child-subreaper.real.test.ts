@@ -9,7 +9,7 @@ import {
 import { processProbeEntrypoints } from "../process-probes-runtime.test-support.js";
 
 it.skipIf(process.platform !== "linux" || !["x64", "arm64"].includes(process.arch))(
-  "retires A before admitting B with real kernel-denied group signals and complete output",
+  "retires A/B and failed startup with real kernel-denied group signals and complete output",
   async () => {
     const fixture = resolveRuntimeWorkerUrl(processProbeEntrypoints.serviceChildSubreaper);
     const { stdout } = await promisify(execFile)(
@@ -21,8 +21,8 @@ it.skipIf(process.platform !== "linux" || !["x64", "arm64"].includes(process.arc
         timeout: 10_000,
       },
     );
-    expect(JSON.parse(stdout)).toEqual(
-      ["A", "B"].map((label) => ({
+    expect(JSON.parse(stdout)).toEqual([
+      ...["A", "B"].map((label) => ({
         label,
         code: 0,
         signal: null,
@@ -30,6 +30,22 @@ it.skipIf(process.platform !== "linux" || !["x64", "arm64"].includes(process.arc
         extinct: true,
         owner: "linux-subreaper",
       })),
-    );
+      {
+        label: "graceful-term",
+        code: 23,
+        signal: null,
+        stdout: "",
+        extinct: true,
+        owner: "linux-subreaper",
+      },
+      {
+        label: "startup-failed",
+        code: null,
+        signal: null,
+        stdout: "",
+        extinct: true,
+        owner: "linux-subreaper",
+      },
+    ]);
   },
 );

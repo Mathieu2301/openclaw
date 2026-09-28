@@ -6,11 +6,12 @@ import {
   getInheritedNativeProcessOwner,
   getInheritedProcessLineageFds,
 } from "./inherited-process-lineage.js";
-
-declare const WORKER_DEPLOY_BUILD: boolean;
+import { assertProcessGroupControl } from "./service-child-group-ownership.js";
 import { supportsNodeWorkerProcessOwner } from "./service-child-protocol.js";
 import { reserveStdioEntry } from "./service-child-stdio.js";
 import type { ProcessAdapterConstruction, SpawnProcessAdapter, SpawnSecretInput } from "./types.js";
+
+declare const WORKER_DEPLOY_BUILD: boolean;
 
 export type ServiceChildRelayParams = ProcessAdapterConstruction & {
   command: string;
@@ -55,15 +56,8 @@ export function prepareServiceChildRelay(params: ServiceChildRelayParams) {
   const useLinuxSubreaper =
     nativeProcessOwner !== undefined &&
     (!params.ownedWorker || params.nativeProcessOwnerSupported === true);
-  if (process.platform === "linux" && !useLinuxSubreaper) {
-    try {
-      process.kill(0, 0);
-    } catch (cause) {
-      throw new Error(
-        "Process-group ownership is unavailable; use a matching Node host and worker with native process ownership. Cleanup cannot fall back to transport-only execution.",
-        { cause },
-      );
-    }
+  if (!useLinuxSubreaper) {
+    assertProcessGroupControl();
   }
   const useWindowsJobAnchor =
     process.platform === "win32" && params.windowsShellCommand !== undefined;
@@ -109,11 +103,11 @@ export function prepareServiceChildRelay(params: ServiceChildRelayParams) {
         ? {
             ownedWorker: true as const,
             cleanupBinding: params.cleanupBinding,
-            ...(useLinuxSubreaper
-              ? { lineageFd, parentLineageFds }
-              : { parentLineageFds: [lineageFd!, ...parentLineageFds] }),
+            parentLineageFds: [lineageFd!, ...parentLineageFds],
           }
-        : { lineageFd, parentLineageFds },
+        : useLinuxSubreaper
+          ? { parentLineageFds: [lineageFd!, ...parentLineageFds] }
+          : { lineageFd, parentLineageFds },
       spawn: {
         workerUrl: useLinuxSubreaper
           ? new URL(nativeProcessOwner!)
@@ -121,7 +115,11 @@ export function prepareServiceChildRelay(params: ServiceChildRelayParams) {
               useWindowsJobAnchor ? "serviceChildWindowsJobAnchor" : "serviceChildRelay",
             ),
         env: params.ownedWorker ? params.env : process.env,
-        detached: useWindowsJobAnchor || params.ownedWorker === true || parentLineageFds.length > 0,
+        detached:
+          useWindowsJobAnchor ||
+          useLinuxSubreaper ||
+          params.ownedWorker === true ||
+          parentLineageFds.length > 0,
         stdio,
       },
       ...deliveryOwner,

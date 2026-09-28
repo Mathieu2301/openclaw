@@ -25,6 +25,8 @@ import {
   isNodeWorkerTerminalState,
   nodeWorkerLaunchReceiptFromRow,
   validateNodeWorkerContainerIdentity,
+  validateNodeWorkerPlanHash,
+  validateNodeWorkerProcessIdentity,
   type NodeWorkerCleanupBinding,
   type NodeWorkerCleanupMode,
   type NodeWorkerContainerIdentity,
@@ -226,12 +228,6 @@ function validateIdentifier(value: string, label: string): void {
   }
 }
 
-function validatePlanHash(value: string): void {
-  if (!/^[a-f0-9]{64}$/u.test(value)) {
-    throw new Error("node worker plan hash must be 64 lowercase hexadecimal characters");
-  }
-}
-
 function validateTimestamp(value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error("node worker launch timestamp must be a non-negative safe integer");
@@ -241,18 +237,6 @@ function validateTimestamp(value: number): void {
 function validatePruneLimit(limit: number): void {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
     throw new Error("node worker launch prune limit must be between 1 and 1000");
-  }
-}
-
-function validateProcessIdentity(identity: NodeWorkerProcessIdentity): void {
-  if (
-    !Number.isSafeInteger(identity.pid) ||
-    identity.pid <= 0 ||
-    identity.pid > 2_147_483_647 ||
-    !Number.isSafeInteger(identity.startTime) ||
-    identity.startTime < 0
-  ) {
-    throw new Error("node worker process identity must contain a bounded pid and start time");
   }
 }
 
@@ -408,9 +392,9 @@ export class NodeWorkerLaunchKernel {
     nowMs = Date.now(),
   ): NodeWorkerLaunchObservation | undefined {
     validateIdentifier(claim.launchId, "node worker launch id");
-    validatePlanHash(claim.planHash);
+    validateNodeWorkerPlanHash(claim.planHash);
     validateTimestamp(nowMs);
-    validateProcessIdentity(supervisor);
+    validateNodeWorkerProcessIdentity(supervisor);
     if (!Number.isSafeInteger(capacity) || capacity < 1) {
       throw new Error("node worker capacity must be a positive safe integer");
     }
@@ -567,7 +551,7 @@ export class NodeWorkerLaunchKernel {
 
   getMatching(expected: NodeWorkerSupervisorIdentity): NodeWorkerLaunchReceipt | undefined {
     validateIdentifier(expected.launchId, "node worker launch id");
-    validatePlanHash(expected.planHash);
+    validateNodeWorkerPlanHash(expected.planHash);
     return this.write("node-worker-launch.get-matching", (database) => {
       const row = readRow(database, expected.launchId);
       return row && rowMatchesImmutableIdentity(row, expected)
@@ -605,9 +589,9 @@ export class NodeWorkerLaunchKernel {
   }): NodeWorkerLaunchReceipt | undefined {
     const nowMs = params.nowMs ?? Date.now();
     validateTimestamp(nowMs);
-    validateProcessIdentity(params.supervisor);
+    validateNodeWorkerProcessIdentity(params.supervisor);
     if (params.worker) {
-      validateProcessIdentity(params.worker);
+      validateNodeWorkerProcessIdentity(params.worker);
     }
     return this.write("node-worker-launch.finish-cancelled", (database) => {
       const current = readRow(database, params.expected.launchId);
@@ -647,8 +631,8 @@ export class NodeWorkerLaunchKernel {
   }): NodeWorkerLaunchReceipt {
     const nowMs = params.nowMs ?? Date.now();
     validateTimestamp(nowMs);
-    validateProcessIdentity(params.supervisor);
-    validateProcessIdentity(params.worker);
+    validateNodeWorkerProcessIdentity(params.supervisor);
+    validateNodeWorkerProcessIdentity(params.worker);
     if (params.container) {
       validateNodeWorkerContainerIdentity(params.container);
     }
@@ -697,13 +681,11 @@ export class NodeWorkerLaunchKernel {
         ensureNodeWorkerLaunchSchema(database, "node_worker_launch_process_scopes");
         executeSqliteQuerySync(
           database,
-          query(database)
-            .insertInto("node_worker_launch_process_scopes")
-            .values({
-              launch_id: params.launchId,
-              scope_kind: "linux-subreaper",
-              descendants_reaped: null,
-            }),
+          query(database).insertInto("node_worker_launch_process_scopes").values({
+            launch_id: params.launchId,
+            scope_kind: "linux-subreaper",
+            descendants_reaped: null,
+          }),
         );
       }
       const updatedAtMs = Math.max(nowMs, current.created_at_ms, current.updated_at_ms);
@@ -743,9 +725,9 @@ export class NodeWorkerLaunchKernel {
   }): NodeWorkerLaunchReceipt {
     const nowMs = params.nowMs ?? Date.now();
     validateTimestamp(nowMs);
-    validateProcessIdentity(params.supervisor);
+    validateNodeWorkerProcessIdentity(params.supervisor);
     if (params.worker) {
-      validateProcessIdentity(params.worker);
+      validateNodeWorkerProcessIdentity(params.worker);
     }
     return this.write("node-worker-launch.finish", (database) => {
       const current = requireMatchingRow(database, params.launchId, params.planHash);
