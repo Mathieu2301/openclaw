@@ -8,7 +8,17 @@ import {
   hasSystemdGatewayServiceMarker,
   isOpenClawGatewaySystemdService,
 } from "./inspect-markers.js";
-import type { ExtraGatewayService } from "./inspect.js";
+
+export type ExtraGatewayService = {
+  platform: "darwin" | "linux" | "win32";
+  label: string;
+  detail: string;
+  scope: "user" | "system";
+  marker?: "openclaw" | "clawdbot";
+  legacy?: boolean;
+  /** Exact Startup definition; a task label cannot identify this native owner. */
+  windowsStartupEntry?: string;
+};
 
 type ScannedGatewayService = ExtraGatewayService & { extra: boolean; managedGateway: boolean };
 

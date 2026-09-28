@@ -19,6 +19,7 @@ import {
   isPotentialGatewayServiceName,
   readServiceFile,
   scanSystemdDir,
+  type ExtraGatewayService,
   type ServiceFileInspectionError,
 } from "./inspect-files.js";
 import {
@@ -50,16 +51,7 @@ import {
   resolveSystemdUnitLoadDirectories,
 } from "./systemd-unit-load-paths.js";
 
-export type ExtraGatewayService = {
-  platform: "darwin" | "linux" | "win32";
-  label: string;
-  detail: string;
-  scope: "user" | "system";
-  marker?: "openclaw" | "clawdbot";
-  legacy?: boolean;
-  /** Exact Startup definition; a task label cannot identify this native owner. */
-  windowsStartupEntry?: string;
-};
+export type { ExtraGatewayService } from "./inspect-files.js";
 
 export type FindExtraGatewayServicesOptions = {
   deep?: boolean;
