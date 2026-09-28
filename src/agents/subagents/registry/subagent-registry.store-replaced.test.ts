@@ -135,6 +135,7 @@ it.each([false, true])(
     );
     expect(
       await maybeWakeRequesterAfterAllChildrenSettled({
+        isSourceCurrent: () => true,
         requesterSessionKey: input.subagent.requesterSessionKey,
         settledEntry,
         transitionBatch: () => {
