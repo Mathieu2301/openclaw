@@ -258,6 +258,26 @@ describe("findExtraGatewayServices (win32)", () => {
     },
   );
 
+  it("does not block a live-dist fence on unrelated stopped tasks with unreadable actions", async () => {
+    const stopped = { ...task("\\Maintenance", "C:\\tools\\maintenance.cmd", ""), state: 3 };
+    const noActions = { taskPath: "\\Native Maintenance", state: 3, actions: [] };
+    listScheduledTasksMock.mockReturnValue([stopped, noActions]);
+    readScheduledTaskCommandMock.mockRejectedValue(new Error("Access denied"));
+
+    await expect(
+      listManagedOpenClawGatewayServices(nativeEnv, { requireComplete: true }),
+    ).resolves.toEqual({ services: [], errors: [] });
+
+    for (const state of [4, 0]) {
+      stopped.state = state;
+      const active = await listManagedOpenClawGatewayServices(nativeEnv, { requireComplete: true });
+      expect(active.errors).toContainEqual({
+        source: "\\Maintenance",
+        message: "Scheduled Task launcher could not be inspected.",
+      });
+    }
+  });
+
   it("refuses a mixed task whose later action runs the Gateway", async () => {
     const label = "\\Mixed Assistant";
     listScheduledTasksMock.mockReturnValue([

@@ -584,11 +584,15 @@ async function scanGatewayServices(
         ]) ?? [];
       const selected =
         normalizeWindowsTaskIdentity(name) === normalizeWindowsTaskIdentity(resolveTaskName(env));
+      const knownTask = selected || isOpenClawGatewayTaskName(name) || isLegacyLabel(name);
+      // A stopped unrelated task cannot hold the checkout's live dist. Keep unknown,
+      // queued, and running tasks fail-closed when their command cannot be read.
+      const mayHoldLiveGateway = task.state !== 1 && task.state !== 3;
       const launcherReference = actionArgv.some((argv) =>
         argv.some((arg) => /\.(?:bat|cmd|vbs)$/i.test(arg) && detectLauncherGatewayMarker(arg)),
       );
       if (!task.actions?.length) {
-        if (requireComplete || selected || isOpenClawGatewayTaskName(name) || isLegacyLabel(name)) {
+        if ((requireComplete && mayHoldLiveGateway) || knownTask) {
           errors.push({ source: name, message: "Scheduled Task action could not be inspected." });
         }
         continue;
@@ -602,7 +606,11 @@ async function scanGatewayServices(
       const hasLauncherAction = actionArgv.some((argv) =>
         argv.some((arg) => /\.(?:bat|cmd|vbs)$/i.test(arg)),
       );
-      if (requireComplete && task.actions.length > 1 && (hasGatewayAction || hasLauncherAction)) {
+      if (
+        requireComplete &&
+        task.actions.length > 1 &&
+        (hasGatewayAction || (hasLauncherAction && (mayHoldLiveGateway || knownTask)))
+      ) {
         errors.push({
           source: name,
           message: "Multiple Scheduled Task actions could not be inspected as one Gateway.",
@@ -632,7 +640,7 @@ async function scanGatewayServices(
               },
             },
           );
-          if (requireComplete && !command) {
+          if (requireComplete && mayHoldLiveGateway && !command) {
             throw new Error("Registered launcher disappeared during inspection.");
           }
           profile = command ? resolveWindowsServiceCommandProfile(command) : undefined;
@@ -657,13 +665,7 @@ async function scanGatewayServices(
             recordDeadline();
             break;
           }
-          if (
-            requireComplete ||
-            selected ||
-            isOpenClawGatewayTaskName(name) ||
-            isLegacyLabel(name) ||
-            recognizableLauncher
-          ) {
+          if ((requireComplete && mayHoldLiveGateway) || knownTask || recognizableLauncher) {
             errors.push({
               source: name,
               message: "Scheduled Task launcher could not be inspected.",
