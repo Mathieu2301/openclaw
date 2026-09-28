@@ -62,7 +62,27 @@ describe("browser remote profile tab ops via Playwright", () => {
     expect(healthProbe).not.toHaveBeenCalled();
   });
 
-  it("does not repeat a failed remote enumeration before reporting an unavailable profile", async () => {
+  it("recovers an explicit remote tab after a transient first enumeration failure", async () => {
+    const healthProbe = vi.spyOn(deps.chromeModule, "isChromeCdpReady").mockResolvedValue(false);
+    const listPagesViaPlaywright = vi
+      .fn(async () => [page("T1")])
+      .mockRejectedValueOnce(new Error("transient CDP failure"));
+    vi.spyOn(deps.pwAiModule, "getPwAiModule").mockResolvedValue({
+      listPagesViaPlaywright,
+    } as unknown as Awaited<ReturnType<typeof deps.pwAiModule.getPwAiModule>>);
+    const { state } = deps.createRemoteRouteHarness();
+    const remote = deps.createBrowserRouteContext({ getState: () => state }).forProfile("remote");
+
+    await expect(remote.ensureTabAvailable("T1")).resolves.toMatchObject({ targetId: "T1" });
+    expect(listPagesViaPlaywright).toHaveBeenCalledTimes(2);
+    expect(listPagesViaPlaywright).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ timeoutMs: 5_000 }),
+    );
+    expect(healthProbe).not.toHaveBeenCalled();
+  });
+
+  it("bounds the retry before reporting an unavailable remote profile", async () => {
     const healthProbe = vi.spyOn(deps.chromeModule, "isChromeCdpReady").mockResolvedValue(false);
     const listPagesViaPlaywright = vi.fn(async () => {
       throw new Error("CDP connection timed out");
@@ -74,7 +94,11 @@ describe("browser remote profile tab ops via Playwright", () => {
     const remote = deps.createBrowserRouteContext({ getState: () => state }).forProfile("remote");
 
     await expect(remote.ensureTabAvailable("T1")).rejects.toThrow(/not running/i);
-    expect(listPagesViaPlaywright).toHaveBeenCalledOnce();
+    expect(listPagesViaPlaywright).toHaveBeenCalledTimes(2);
+    expect(listPagesViaPlaywright).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ timeoutMs: 5_000 }),
+    );
     expect(healthProbe).toHaveBeenCalledOnce();
   });
 

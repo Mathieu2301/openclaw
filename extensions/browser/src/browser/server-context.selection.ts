@@ -5,6 +5,7 @@ import { sleepWithAbort } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage, type SsrFPolicy } from "openclaw/plugin-sdk/security-runtime";
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { assertChromeMcpCdpTransportAllowed } from "./cdp-reachability-policy.js";
+import { CDP_WS_HANDSHAKE_TIMEOUT_MS } from "./cdp-timeouts.js";
 import { fetchOk, normalizeCdpHttpBaseForJsonEndpoints } from "./cdp.helpers.js";
 import { appendCdpPath } from "./cdp.js";
 import { getChromeMcpModule } from "./chrome-mcp.runtime.js";
@@ -82,9 +83,9 @@ export function createProfileSelectionOps({
     let sawSuccessfulList = false;
     let openedTab: BrowserTab | undefined;
 
-    const readTabs = async (): Promise<BrowserTab[]> => {
+    const readTabs = async (listOptions = options): Promise<BrowserTab[]> => {
       try {
-        const tabs = await listTabs(options);
+        const tabs = await listTabs(listOptions);
         options?.signal?.throwIfAborted();
         sawSuccessfulList = true;
         if (tabs.length > 0) {
@@ -126,16 +127,22 @@ export function createProfileSelectionOps({
     };
 
     const tabs1 = await readTabs();
-    // For a remote explicit target, let the profile context diagnose a failed
-    // enumeration before another full action-timeout attempt doubles the delay.
-    if (capabilities.isRemote && targetId !== undefined && !sawSuccessfulList && lastListError) {
-      throw lastListError instanceof Error
-        ? lastListError
-        : new Error(formatErrorMessage(lastListError));
-    }
     await openWhenConfirmedEmpty(tabs1);
 
-    let listedTabs = await readTabs();
+    // Preserve one recovery read after a transient remote failure, but do not
+    // spend a second full action timeout when the remote browser is unavailable.
+    const failedRemoteTargetList =
+      capabilities.isRemote &&
+      targetId !== undefined &&
+      !sawSuccessfulList &&
+      lastListError !== undefined;
+    const retryOptions = failedRemoteTargetList
+      ? {
+          ...options,
+          timeoutMs: Math.min(options?.timeoutMs ?? Infinity, CDP_WS_HANDSHAKE_TIMEOUT_MS),
+        }
+      : options;
+    let listedTabs = await readTabs(retryOptions);
     await openWhenConfirmedEmpty(listedTabs);
     let unfilteredTabs = mergeOpenedTabSnapshot(listedTabs, openedTab);
     let candidates = candidateTabs(unfilteredTabs);
