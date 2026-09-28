@@ -5773,14 +5773,18 @@ describe("test selector native source facts", () => {
         );
         const native = spawnSync(process.execPath, [scanner], {
           cwd,
-          input: JSON.stringify({ files, terms: ["scripts/tool.mts", "scripts/tool"] }),
+          input: JSON.stringify({ files, terms: [] }),
           encoding: "utf8",
           // A malformed escape must not rewind the scanner's cursor forever.
           timeout: 5_000,
         });
         expect(native.error).toBeUndefined();
         expect(native.status, native.stderr).toBe(0);
-        expect(JSON.parse(native.stdout)).toEqual([expectedFacts, unterminatedFacts, null]);
+        expect(JSON.parse(native.stdout)).toEqual([
+          { ...expectedFacts, matches: [], references: [] },
+          unterminatedFacts,
+          null,
+        ]);
         vi.stubEnv(
           "NODE_OPTIONS",
           "--import=data:text/javascript,throw%20Error('inherited-loader')",
@@ -5793,10 +5797,7 @@ describe("test selector native source facts", () => {
               ["scripts/tool.mts", "scripts/tool"],
               16 * 1024 * 1024,
             ),
-          ).toEqual([
-            { file: "large.mts", ...expectedFacts },
-            { file: "unterminated.ts", ...unterminatedFacts },
-          ]);
+          ).toEqual([{ file: "large.mts", ...expectedFacts }]);
           expect(
             readTestSelectorSourceFacts(
               cwd,

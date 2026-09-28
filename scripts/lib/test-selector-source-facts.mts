@@ -536,7 +536,7 @@ export function readTestSelectorSourceFacts(
       { cause: result.error },
     );
   }
-  // Position is the file identity: require every requested row, including unreadable files.
+  // Position is the file identity, including skipped or unreadable files.
   const rows: unknown = JSON.parse(result.stdout);
   if (!Array.isArray(rows) || rows.length !== files.length) {
     throw new Error("Invalid test selector source scan row count");
@@ -575,7 +575,8 @@ async function readSourceFacts() {
     }
     return { file: value.file, parseImports: value.parseImports };
   });
-  const matchTerms = createSourceTermMatcher(parseStrings(request.terms));
+  const terms = parseStrings(request.terms);
+  const matchTerms = createSourceTermMatcher(terms);
   const readFacts = async ({ file, parseImports }: SourceFile) => {
     let source: string;
     try {
@@ -585,6 +586,11 @@ async function readSourceFacts() {
       return null;
     }
     const { matches, references } = matchTerms(source);
+    // A narrow scan must not parse unrelated files or publish empty import facts
+    // that could satisfy a later full-graph read.
+    if (terms.length > 0 && matches.length === 0) {
+      return null;
+    }
     const facts = parseImports ? importFacts(source) : { imports: [], typeOnlyImports: [] };
     if (parseImports) {
       // Vitest loads these modules from config values instead of JavaScript imports.
