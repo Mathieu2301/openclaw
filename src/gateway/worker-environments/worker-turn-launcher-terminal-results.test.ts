@@ -279,6 +279,8 @@ describe("worker turn launcher terminal results", () => {
             changed: false,
             verifyStable: async () => {},
             verifyLocalStable: async () => {},
+            publishStagedResult: async () => {},
+            discardPreparedStagedResult: async () => {},
           };
         }),
       }) satisfies WorkerTunnelHandle;
