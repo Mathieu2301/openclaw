@@ -519,7 +519,7 @@ describe("managed plugin catalog", () => {
         env: {},
         officialCatalog: { entries: [] },
       });
-      const plugin = expectDefined(catalog.plugins[0]);
+      const plugin = expectDefined(catalog.plugins[0], "managed model provider");
       expect(plugin.categories).toEqual(["models"]);
       expect(plugin.enabled).toBe(false);
       if (expected) {

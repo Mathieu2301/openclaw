@@ -231,7 +231,7 @@ suite.define(() => {
           categories: ["models"],
           contracts: { videoGenerationProviders: [id] },
         });
-        return {
+        const plugin: PluginsListResult["plugins"][number] = {
           id,
           name: id === "zai" ? "Z.AI" : "Novita",
           packageName: "@openclaw/" + id,
@@ -241,8 +241,11 @@ suite.define(() => {
           enabled: false,
           state: "disabled" as const,
           description: "Model inference and video generation.",
-          ...projectPluginCatalogCategoryFacts(snapshot.byPluginId.get(id)),
         };
+        return Object.assign(
+          plugin,
+          projectPluginCatalogCategoryFacts(snapshot.byPluginId.get(id)),
+        );
       }),
       diagnostics: [],
       mutationAllowed: true,
@@ -292,9 +295,7 @@ suite.define(() => {
                 categories: ["models"],
               },
             ]
-          : category === "models"
-            ? []
-            : [fal],
+          : [fal].filter((plugin) => !category || plugin.categories.includes(category)),
         categories: discoveryCategories.categories,
       }),
       ...(!category ? { categories: discoveryCategories.categories } : {}),
@@ -313,16 +314,30 @@ suite.define(() => {
       const chips = page.locator(".plugin-catalog-chips");
       await chips.getByRole("button", { name: "Media", exact: true }).waitFor();
       const cards = page.locator(".plugin-catalog-card:not(.plugin-catalog-card--skeleton)");
+      const expectFilteredCards = async (category: string, names: string[]) => {
+        await expect
+          .poll(async () => ({
+            selected: await chips
+              .getByRole("button", { name: category, exact: true })
+              .getAttribute("aria-pressed"),
+            names: await page
+              .locator(".plugin-catalog-grid--results .plugin-catalog-card__primary-link")
+              .evaluateAll((links) =>
+                links.map((link) => link.getAttribute("aria-label") ?? "").toSorted(),
+              ),
+          }))
+          .toEqual({ selected: "true", names: names.toSorted() });
+      };
       if (captureUiProof) {
         await gateway.setMethodResponse("plugins.catalog.browse", browse(before, "models"));
         await chips.getByRole("button", { name: "Models", exact: true }).click();
         await gateway.waitForRequest("plugins.catalog.browse", { match: { category: "models" } });
-        await expect.poll(() => cards.count()).toBe(2);
+        await expectFilteredCards("Models", ["Novita", "Z.AI"]);
         await captureScreenshot(page, "models-discovery-before.png");
         await gateway.setMethodResponse("plugins.catalog.browse", browse(before, "media"));
         await chips.getByRole("button", { name: "Media", exact: true }).click();
         await gateway.waitForRequest("plugins.catalog.browse", { match: { category: "media" } });
-        await expect.poll(() => cards.count()).toBe(1);
+        await expectFilteredCards("Media", ["fal"]);
         await captureScreenshot(page, "media-discovery-before.png");
         await gateway.setMethodResponse("plugins.catalog.browse", browse(local));
         await chips.getByRole("button", { name: "All", exact: true }).click();
@@ -343,7 +358,7 @@ suite.define(() => {
           after: priorModels,
           match: { category: "models" },
         });
-        await expect.poll(() => cards.count()).toBe(2);
+        await expectFilteredCards("Models", ["Novita", "Z.AI"]);
         await captureScreenshot(page, "models-discovery-after.png");
       }
       const priorMedia = (
@@ -355,7 +370,7 @@ suite.define(() => {
         after: priorMedia,
         match: { category: "media" },
       });
-      await expect.poll(() => cards.count()).toBe(3);
+      await expectFilteredCards("Media", ["fal", "Novita", "Z.AI"]);
       for (const name of ["Novita", "Z.AI"]) {
         expect(await cards.filter({ hasText: name }).count()).toBe(1);
       }

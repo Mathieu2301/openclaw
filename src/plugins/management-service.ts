@@ -332,7 +332,6 @@ export const listManagedPlugins = withManagedPluginCache(
       });
       const plugin: ManagedPluginCatalogEntry = {
         id: record.pluginId,
-        ...projectPluginCatalogCategoryFacts(manifest),
         name: presentation.name,
         installed: true,
         enabled,
@@ -343,6 +342,7 @@ export const listManagedPlugins = withManagedPluginCache(
         }),
         removable,
       };
+      Object.assign(plugin, projectPluginCatalogCategoryFacts(manifest));
       if (record.packageName) {
         plugin.packageName = record.packageName;
       }
