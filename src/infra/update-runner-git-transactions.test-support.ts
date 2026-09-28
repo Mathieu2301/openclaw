@@ -323,28 +323,12 @@ function registerGitRetainedTransactionTests(
     ).toMatchObject({ commit: beforeSha });
   });
 
-  it.each([
-    ["delete", "none"],
-    ["rewrite", "none"],
-    ["delete", "checkout"],
-    ["rewrite", "checkout"],
-    ["delete", "bisect"],
-    ["delete", "rebase"],
-    ["delete", "recreate-failed"],
-  ] as const)(
-    "retained rollback protects custody at the final ref %s (%s)",
-    async (operation, claim) => {
+  it.each([false, true])(
+    "retained rollback keeps custody during branch rewrite (late claim: %s)",
+    async (claim) => {
       const { root, beforeSha, advanceRemote, update, runCommand, setRunCommand } = getFixture();
       const linked = path.join(path.dirname(root), "linked-checkout");
-      if (operation === "delete") {
-        await runFixtureGit(root, "checkout", "-b", "operator-branch");
-        await runFixtureGit(root, "branch", "-D", "main");
-      }
-      if (claim === "bisect") {
-        const remote = await runFixtureGit(root, "remote", "get-url", "origin");
-        await runFixtureGit(remote, "commit", "--allow-empty", "-m", "bisect midpoint");
-      }
-      const targetSha = await advanceRemote();
+      await advanceRemote();
       let rollingBack = false;
       let attempted = false;
       setRunCommand(async (argv, options) => {
@@ -352,50 +336,50 @@ function registerGitRetainedTransactionTests(
           rollingBack &&
           !attempted &&
           argv[2] === root &&
-          (operation === "rewrite"
-            ? argv.includes("checkout") && argv.includes("-B")
-            : argv.includes("update-ref") && argv.includes("-d"))
+          argv.includes("checkout") &&
+          argv.includes("-B")
         ) {
           attempted = true;
-          if (claim !== "none") {
-            const claiming = runFixtureGit(root, "worktree", "add", linked, "main");
-            if (operation === "rewrite") {
-              await expect(claiming).rejects.toThrow(/already (?:used|checked out)/);
-            } else {
-              await claiming;
-              if (claim === "bisect") {
-                await runFixtureGit(linked, "bisect", "start", "main", beforeSha);
-              } else if (claim === "rebase") {
-                const tree = await runFixtureGit(root, "rev-parse", `${beforeSha}^{tree}`);
-                const base = await runFixtureGit(
-                  root,
-                  "commit-tree",
-                  tree,
-                  "-p",
-                  beforeSha,
-                  "-m",
-                  "rebase base",
-                );
-                await expect(
-                  runFixtureGit(linked, "rebase", "--exec", "false", base),
-                ).rejects.toThrow();
-              }
-              if (claim === "bisect" || claim === "rebase") {
-                await expect(runFixtureGit(linked, "symbolic-ref", "HEAD")).rejects.toThrow();
-              }
-            }
+          if (claim) {
+            await expect(runFixtureGit(root, "worktree", "add", linked, "main")).rejects.toThrow(
+              /already (?:used|checked out)/,
+            );
           }
-        }
-        if (
-          claim === "recreate-failed" &&
-          argv.includes("update-ref") &&
-          /^0+$/.test(argv.at(-1) ?? "")
-        ) {
-          // A concurrent ref writer wins after deletion; compensation must not overwrite it.
-          await runFixtureGit(root, "update-ref", "refs/heads/main", beforeSha);
         }
         return runCommand(argv, options);
       });
+      let retained: PackageUpdateTransaction | undefined;
+      expect(
+        (
+          await update({
+            onTransaction: (transaction) => {
+              retained = transaction;
+            },
+          })
+        ).status,
+      ).toBe("ok");
+      assert(retained);
+      rollingBack = true;
+      expect((await retained.rollback(() => {})).exitCode).toBe(0);
+      expect(attempted).toBe(true);
+      expect(await runFixtureGit(root, "rev-parse", "refs/heads/main")).toBe(beforeSha);
+      expect(await runFixtureGit(root, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
+      await expectRuntime(root, beforeSha);
+      await retained.complete({ activationVerified: false }, () => {});
+    },
+  );
+
+  it.each(["operator-branch", "HEAD"])(
+    "retained rollback keeps the created dev branch while restoring %s",
+    async (branch) => {
+      const { root, beforeSha, advanceRemote, update, expectNoRuntimeStagingPaths } = getFixture();
+      await runFixtureGit(
+        root,
+        "checkout",
+        ...(branch === "HEAD" ? ["--detach", beforeSha] : ["-b", branch]),
+      );
+      await runFixtureGit(root, "branch", "-D", "main");
+      const targetSha = await advanceRemote();
       let retained: PackageUpdateTransaction | undefined;
       const result = await update({
         onTransaction: (transaction) => {
@@ -404,39 +388,19 @@ function registerGitRetainedTransactionTests(
       });
       expect(result.status).toBe("ok");
       assert(retained);
-      rollingBack = true;
       expect((await retained.rollback(() => {})).exitCode).toBe(0);
-      expect(attempted).toBe(true);
-      if (operation === "delete" && claim === "none") {
-        expect(await runFixtureGit(root, "branch", "--list", "main")).toBe("");
-      } else {
-        expect(await runFixtureGit(root, "rev-parse", "refs/heads/main")).toBe(
-          operation === "rewrite" || claim === "recreate-failed" ? beforeSha : targetSha,
-        );
-      }
+      expect(await runFixtureGit(root, "rev-parse", "refs/heads/main")).toBe(targetSha);
       expect(await runFixtureGit(root, "rev-parse", "HEAD")).toBe(beforeSha);
-      expect(await runFixtureGit(root, "symbolic-ref", "HEAD")).toBe(
-        `refs/heads/${operation === "delete" ? "operator-branch" : "main"}`,
+      expect(await runFixtureGit(root, "rev-parse", "--abbrev-ref", "HEAD")).toBe(branch);
+      const kept = result.steps.find((step) => step.name === "git-rollback-keep-branch");
+      expect(kept?.advisory).toMatchObject({ kind: "recoverable-maintenance" });
+      expect(kept?.advisory?.message).toContain(
+        `Kept branch main created by this update at ${targetSha}`,
       );
+      expect(kept?.advisory?.message).toMatch(/git branch -d (?:main|'main')/);
       await expectRuntime(root, beforeSha);
-      if (operation === "delete" && claim !== "none") {
-        expect(await runFixtureGit(linked, "rev-parse", "HEAD")).toMatch(/^[0-9a-f]{40}$/);
-        if (claim === "checkout") {
-          expect(await runFixtureGit(linked, "rev-parse", "HEAD")).toBe(targetSha);
-          expect(await runFixtureGit(linked, "symbolic-ref", "HEAD")).toBe("refs/heads/main");
-        }
-        expect(
-          result.steps.find((step) => step.name === "git-rollback-delete-branch"),
-        ).toMatchObject({
-          advisory: {
-            kind: "recoverable-maintenance",
-            message: expect.stringContaining(
-              claim === "recreate-failed" ? `git branch main ${targetSha}` : "another Git worktree",
-            ),
-          },
-        });
-      }
       await retained.complete({ activationVerified: false }, () => {});
+      await expectNoRuntimeStagingPaths();
     },
   );
 
@@ -569,74 +533,6 @@ function registerGitRetainedTransactionTests(
       await runFixtureGit(root, "checkout", "--detach", "--no-overwrite-ignore");
       await runFixtureGit(root, "branch", "-f", "main", recoverySha);
       expect(await runFixtureGit(root, "rev-parse", "refs/heads/main")).toBe(recoverySha);
-    },
-  );
-
-  it.each([
-    ["operator-branch", false],
-    ["HEAD", false],
-    ["operator-branch", true],
-  ] as const)(
-    "retained rollback restores its own %s lineage (new branch edited: %s)",
-    async (branch, branchEdited) => {
-      const {
-        root,
-        beforeSha,
-        advanceRemote,
-        update,
-        expectNoRuntimeStagingPaths,
-        runCommand,
-        setRunCommand,
-      } = getFixture();
-      await runFixtureGit(
-        root,
-        "checkout",
-        ...(branch === "HEAD" ? ["--detach", beforeSha] : ["-b", branch]),
-      );
-      await runFixtureGit(root, "branch", "-D", "main");
-      const targetSha = await advanceRemote();
-      let edited = false;
-      setRunCommand(async (argv, options) => {
-        if (
-          branchEdited &&
-          argv[2] === root &&
-          ((argv.includes("branch") && argv.includes("-D")) ||
-            (argv.includes("update-ref") && argv.includes("-d")))
-        ) {
-          await runFixtureGit(root, "update-ref", "refs/heads/main", beforeSha, targetSha);
-          edited = true;
-        }
-        return runCommand(argv, options);
-      });
-      let retained: PackageUpdateTransaction | undefined;
-      expect(
-        (
-          await update({
-            onTransaction: (transaction) => {
-              retained = transaction;
-            },
-          })
-        ).status,
-      ).toBe("ok");
-      assert(retained);
-      if (branchEdited) {
-        await expect(retained.rollback(() => {})).rejects.toThrow();
-        expect(edited).toBe(true);
-        expect(await runFixtureGit(root, "rev-parse", "refs/heads/main")).toBe(beforeSha);
-        expect(await runFixtureGit(root, "rev-parse", "--abbrev-ref", "HEAD")).toBe(branch);
-        expect(await runFixtureGit(root, "rev-parse", "HEAD")).toBe(beforeSha);
-        await expectRuntime(root, targetSha);
-        await expect(retained.complete({ activationVerified: false }, () => {})).rejects.toThrow();
-        await expect(fs.stat(retained.backupRoot)).resolves.toBeDefined();
-        return;
-      }
-      expect((await retained.rollback(() => {})).exitCode).toBe(0);
-      expect(await runFixtureGit(root, "rev-parse", "HEAD")).toBe(beforeSha);
-      expect(await runFixtureGit(root, "rev-parse", "--abbrev-ref", "HEAD")).toBe(branch);
-      expect(await runFixtureGit(root, "branch", "--list", "main")).toBe("");
-      await expectRuntime(root, beforeSha);
-      await retained.complete({ activationVerified: false }, () => {});
-      await expectNoRuntimeStagingPaths();
     },
   );
 }

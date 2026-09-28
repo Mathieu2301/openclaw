@@ -1,11 +1,8 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { quoteCliArg, quotePowerShellArg } from "../cli/quote-cli-arg.js";
-import { hasErrnoCode } from "./errno.js";
 import { DEV_BRANCH } from "./update-channels.js";
 import { isFailedUpdateStep } from "./update-run-step.js";
 import { runStep } from "./update-runner-command.js";
-import type { CommandRunner, RunStepOptions } from "./update-runner-types.js";
+import type { RunStepOptions } from "./update-runner-types.js";
 
 // A successful Git status command does not imply a clean checkout.
 export async function runGitCleanCheckStep(options: RunStepOptions) {
@@ -91,51 +88,6 @@ export async function runGitActivationBranchCheckStep(stepOptions: RunStepOption
   });
 }
 
-async function deletedBranchClaimed(
-  run: CommandRunner,
-  options: Parameters<CommandRunner>[1],
-  root: string,
-) {
-  const worktrees = await run(
-    ["git", "-C", root, "worktree", "list", "--porcelain", "-z"],
-    options,
-  );
-  if (worktrees.code !== 0) {
-    throw new Error(worktrees.stderr || "Could not inspect Git worktree custody.");
-  }
-  for (const record of worktrees.stdout.split("\0\0")) {
-    const fields = record.split("\0");
-    if (fields.includes(`branch refs/heads/${DEV_BRANCH}`)) {
-      return true;
-    }
-    const worktree = fields.find((field) => field.startsWith("worktree "))?.slice(9);
-    if (!worktree || fields.includes("bare")) {
-      continue;
-    }
-    const directory = await run(
-      ["git", "-C", worktree, "rev-parse", "--absolute-git-dir"],
-      options,
-    );
-    if (directory.code !== 0) {
-      throw new Error(directory.stderr || "Could not inspect Git worktree state.");
-    }
-    for (const state of ["rebase-merge/head-name", "rebase-apply/head-name", "BISECT_START"]) {
-      const name = await fs
-        .readFile(path.join(directory.stdout.trim(), state), "utf8")
-        .catch((error: unknown) => {
-          if (hasErrnoCode(error, "ENOENT")) {
-            return "";
-          }
-          throw error;
-        });
-      if (name.trim() === DEV_BRANCH || name.trim() === `refs/heads/${DEV_BRANCH}`) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 export async function runGitRollbackSteps({
   beforeSha,
   branch,
@@ -176,61 +128,26 @@ export async function runGitRollbackSteps({
     name: string,
     args: string[],
     expectedSource = source,
-    refChange?: "delete" | "rewrite",
+    refChange?: "keep" | "rewrite",
   ) => {
     if (source) {
       await assertSourceCurrent();
     }
     assertCurrent();
-    const stepOptions = recoveryStep(name, ["git", "-C", gitRoot, ...args], gitRoot);
-    let skipped: string | undefined;
+    const stepOptions = recoveryStep(
+      name,
+      refChange === "keep" ? args : ["git", "-C", gitRoot, ...args],
+      gitRoot,
+    );
     const result = await runStep({
       ...stepOptions,
       progress: { ...stepOptions.progress, onStepComplete: undefined },
       runCommand: async (argv, options) => {
-        if (refChange === "delete" && activatedSource) {
-          const current = await stepOptions.runCommand(
-            ["git", "-C", gitRoot, "rev-parse", "--verify", `refs/heads/${DEV_BRANCH}`],
-            options,
-          );
-          assertCurrent();
-          if (current.code !== 0 || current.stdout.trim() !== activatedSource.sha) {
-            return { code: 1, stdout: "", stderr: `Branch ${DEV_BRANCH} changed before cleanup.` };
-          }
-        }
         assertCurrent();
-        const commandResult = await stepOptions.runCommand(argv, options);
-        if (refChange === "delete" && activatedSource && commandResult.code === 0) {
-          // A missing ref cannot be newly checked out. Repair a claim that won
-          // before deletion without overwriting a concurrently recreated ref.
-          try {
-            if (await deletedBranchClaimed(stepOptions.runCommand, options, gitRoot)) {
-              skipped = `Skipped deleting ${DEV_BRANCH}: another Git worktree uses or reserves it.`;
-            }
-          } catch (error) {
-            skipped = `Skipped deleting ${DEV_BRANCH}: custody inspection failed: ${String(error)}`;
-          }
-          if (skipped) {
-            assertCurrent();
-            const recreated = await stepOptions
-              .runCommand(
-                [
-                  "git",
-                  "-C",
-                  gitRoot,
-                  "update-ref",
-                  `refs/heads/${DEV_BRANCH}`,
-                  activatedSource.sha,
-                  "0".repeat(activatedSource.sha.length),
-                ],
-                options,
-              )
-              .catch((error: unknown) => ({ code: 1, stderr: String(error) }));
-            if (recreated.code !== 0) {
-              skipped += ` Could not restore the branch: ${recreated.stderr}. Restore it with: git branch ${DEV_BRANCH} ${activatedSource.sha}`;
-            }
-          }
+        if (refChange === "keep") {
+          return { code: 0, stdout: "", stderr: "" };
         }
+        const commandResult = await stepOptions.runCommand(argv, options);
         if (refChange === "rewrite" && source && branch && commandResult.code === 0) {
           const ref = `refs/heads/${branch}`;
           const previous = await stepOptions.runCommand(
@@ -257,8 +174,12 @@ export async function runGitRollbackSteps({
         return commandResult;
       },
     });
-    if (skipped) {
-      result.advisory = { kind: "recoverable-maintenance", message: skipped };
+    if (refChange === "keep" && activatedSource) {
+      const quote = process.platform === "win32" ? quotePowerShellArg : quoteCliArg;
+      result.advisory = {
+        kind: "recoverable-maintenance",
+        message: `Kept branch ${DEV_BRANCH} created by this update at ${activatedSource.sha}. Once no worktree uses it, remove it with: git branch -d ${quote(DEV_BRANCH)}`,
+      };
     }
     stepOptions.progress?.onStepComplete?.({
       ...result,
@@ -281,7 +202,7 @@ export async function runGitRollbackSteps({
     name: string,
     args: string[],
     expectedSource = source,
-    refChange?: "delete" | "rewrite",
+    refChange?: "keep" | "rewrite",
   ) => !isFailedUpdateStep(await execute(name, args, expectedSource, refChange));
   // A retained transaction admitted a clean source tree. It owns no dirty
   // files to reset or clean, even if they appear after its last observation.
@@ -327,14 +248,12 @@ export async function runGitRollbackSteps({
     }
   }
   if (createdDevBranchDuringUpdate && (!attached || checkedOut)) {
-    await restore(
-      "git-rollback-delete-branch",
-      activatedSource
-        ? ["update-ref", "-d", `refs/heads/${DEV_BRANCH}`, activatedSource.sha]
-        : ["branch", "-D", DEV_BRANCH],
-      source,
-      "delete",
-    );
+    if (activatedSource) {
+      // Git cannot exclude in-flight worktree claims, so retained rollback keeps the ref.
+      await execute("git-rollback-keep-branch", ["keep", "branch", DEV_BRANCH], source, "keep");
+    } else {
+      await restore("git-rollback-delete-branch", ["branch", "-D", DEV_BRANCH]);
+    }
   }
   const head = await execute("git-rollback-verify-head", ["rev-parse", "HEAD"]);
   const verified = !isFailedUpdateStep(head) && head.stdoutTail?.trim() === beforeSha;
