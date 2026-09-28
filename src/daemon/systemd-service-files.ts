@@ -203,13 +203,13 @@ async function readSystemdManagerCommand(
         "ExecStart",
         "WorkingDirectory",
         ...(locationOnly ? [] : ["Environment", "EnvironmentFiles", "UnsetEnvironment"]),
-        ...(systemScope ? ["User"] : []),
+        ...(systemScope && !locationOnly ? ["User"] : []),
       ],
       [
         "a(sasbttttuii)",
         "s",
         ...(locationOnly ? [] : ["as", "a(sb)", "as"]),
-        ...(systemScope ? ["s"] : []),
+        ...(systemScope && !locationOnly ? ["s"] : []),
       ],
     );
     const [executions, workingDirectory, ...details] = properties ?? [];
@@ -249,11 +249,11 @@ async function readSystemdManagerCommand(
       }
       inlineEnvironment[assignment.slice(0, separator)] = assignment.slice(separator + 1);
     }
-    if (systemScope && typeof user !== "string") {
+    if (systemScope && !locationOnly && typeof user !== "string") {
       throw unavailable();
     }
     const account =
-      systemScope && typeof user === "string"
+      systemScope && !locationOnly && typeof user === "string"
         ? opts?.requireEffective
           ? assertSystemdServiceAccount(user)
           : os.userInfo()
@@ -492,12 +492,14 @@ async function readSystemdServiceCommand(
       (await (await import("./systemd-scope.js")).findInstalledSystemdGatewayScope(env, options));
     const opts = target ? { ...options, systemdReadTarget: target } : options;
     const unitPath = target?.unitPath ?? resolveSystemdUnitPath(env);
-    const content = await fs.readFile(unitPath, "utf8").catch((error: unknown) => {
-      if (!hasErrnoCode(error, "ENOENT")) {
-        throw new ServiceDefinitionInspectionError(unitPath);
-      }
-      return null;
-    });
+    const content = locationOnly
+      ? null
+      : await fs.readFile(unitPath, "utf8").catch((error: unknown) => {
+          if (!hasErrnoCode(error, "ENOENT")) {
+            throw new ServiceDefinitionInspectionError(unitPath);
+          }
+          return null;
+        });
     if (target?.scope === "system") {
       const command = await readSystemdManagerCommand(
         env,

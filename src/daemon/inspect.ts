@@ -43,6 +43,7 @@ import {
 } from "./schtasks-layout.js";
 import { listScheduledTasks } from "./schtasks-state-probe.js";
 import { resolveWindowsServiceCommandProfile } from "./service-env-merge.js";
+import { listLoadedSystemdUnits } from "./systemd-loaded-unit-inventory.js";
 import { resolveSystemdServiceName } from "./systemd-service-files.js";
 import {
   DEFAULT_SYSTEMD_SYSTEM_UNIT_DIRS,
@@ -444,7 +445,6 @@ async function scanGatewayServices(
             scope: "user",
             selectedName: resolveSystemdServiceName(env),
             errors,
-            requireComplete,
           })),
         );
       }
@@ -479,9 +479,52 @@ async function scanGatewayServices(
             scope: "system",
             selectedName: resolveSystemdServiceName(env),
             errors,
-            requireComplete,
           })) {
             push(svc);
+          }
+        }
+      }
+      if (requireComplete) {
+        for (const scope of ["user", "system"] as const) {
+          try {
+            for (const unit of await listLoadedSystemdUnits(scope, env)) {
+              const name = unit.name.slice(0, -".service".length);
+              const command = normalizeLowercaseStringOrEmpty(unit.execStart);
+              const gatewayArg = /(?:^|[\s;])gateway(?:[\s;]|$)/.test(command);
+              const marker = gatewayArg
+                ? (EXTRA_MARKERS.find((value) => command.includes(value)) ?? null)
+                : null;
+              const selected = isPotentialGatewayServiceName(
+                name,
+                "linux",
+                resolveSystemdServiceName(env),
+              );
+              if (!marker && !selected) {
+                continue;
+              }
+              if (!path.posix.isAbsolute(unit.fragmentPath)) {
+                errors.push({
+                  source: unit.name,
+                  message: "Loaded systemd Gateway definition could not be inspected.",
+                });
+                continue;
+              }
+              push({
+                platform: "linux",
+                label: unit.name,
+                detail: `unit: ${unit.fragmentPath}`,
+                scope,
+                marker: marker ?? "openclaw",
+                legacy: marker === "clawdbot",
+                extra: true,
+                managedGateway: marker !== "clawdbot",
+              });
+            }
+          } catch {
+            errors.push({
+              source: scope === "user" ? "systemctl --user" : "systemctl --system",
+              message: "Loaded systemd services could not be inspected.",
+            });
           }
         }
       }

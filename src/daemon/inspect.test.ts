@@ -13,6 +13,12 @@ import {
 } from "./inspect.js";
 
 const nativePlistHost = vi.hoisted(() => process.platform === "darwin");
+const loadedSystemdUnits = vi.hoisted(() =>
+  vi.fn<typeof import("./systemd-loaded-unit-inventory.js").listLoadedSystemdUnits>(),
+);
+vi.mock("./systemd-loaded-unit-inventory.js", () => ({
+  listLoadedSystemdUnits: loadedSystemdUnits,
+}));
 vi.mock("../process/exec.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../process/exec.js")>();
   const { decodeLaunchAgentPlistFixture } = await import("./launchd-plist.test-support.js");
@@ -516,6 +522,10 @@ describe("findExtraGatewayServices (darwin / scanLaunchdDir) — real filesystem
 describe("managed Gateway inventory projections", () => {
   const originalPlatform = process.platform;
 
+  beforeEach(() => {
+    loadedSystemdUnits.mockReset().mockResolvedValue([]);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
@@ -563,31 +573,6 @@ describe("managed Gateway inventory projections", () => {
       await fs.writeFile(target, contents);
     };
   }
-
-  it.each([
-    ["linux", ".config/systemd/user/custom-worker.service"],
-    ["darwin", "Library/LaunchAgents/org.example.custom-worker.plist"],
-  ] as const)(
-    "retains unreadable custom paths in complete %s inventories",
-    async (platform, relative) => {
-      Object.defineProperty(process, "platform", { configurable: true, value: platform });
-      const home = tempDirs.make("managed-unreadable-custom-");
-      isolateNativeRoots(home);
-      const unreadable = path.join(home, relative);
-      // A directory occupying a service file cannot be read, independent of CI user privileges.
-      await fs.mkdir(unreadable, { recursive: true });
-      await expect(listManagedOpenClawGatewayServices({ HOME: home })).resolves.toEqual({
-        services: [],
-        errors: [],
-      });
-      await expect(
-        listManagedOpenClawGatewayServices({ HOME: home }, { requireComplete: true }),
-      ).resolves.toEqual({
-        services: [],
-        errors: [{ source: unreadable, message: "Service path could not be inspected." }],
-      });
-    },
-  );
 
   it.each([
     ["literal", "Environment=OPENCLAW_SERVICE_MARKER=openclaw OPENCLAW_SERVICE_KIND=gateway", true],

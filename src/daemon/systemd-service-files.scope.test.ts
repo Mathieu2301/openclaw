@@ -155,6 +155,38 @@ describe("system-scope effective command", () => {
     ).rejects.toMatchObject({ code: "EACCES" });
   });
 
+  it("reads a different-account system service location without touching its environment", async () => {
+    serviceUser = "other";
+    const protectedFile = path.join(path.dirname(target.unitPath), "protected-service.env");
+    fileSpecs = [[protectedFile, false]];
+    const readFile = fs.readFile;
+    const reads = vi.spyOn(fs, "readFile").mockImplementation(async (file, ...args) => {
+      if (file === protectedFile) {
+        throw Object.assign(new Error("protected fixture"), { code: "EACCES" });
+      }
+      return readFile(file, ...args);
+    });
+
+    await expect(readSystemdServiceCommandLocation(env, target)).resolves.toEqual({
+      kind: "command",
+      command: {
+        programArguments: ["/usr/bin/openclaw", "gateway"],
+        workingDirectory: "/home/gateway",
+        sourcePath: target.unitPath,
+      },
+    });
+    expect(reads.mock.calls.some(([file]) => file === protectedFile)).toBe(false);
+    expect(systemBus.mock.calls.some(([args]) => args.includes("User"))).toBe(false);
+    await expect(
+      readSystemdServiceExecStart(env, {
+        requireEffective: true,
+        requireLoaded: true,
+        systemdReadTarget: target,
+      }),
+    ).rejects.toMatchObject({ reason: "systemd-account-refused" });
+    expect(reads.mock.calls.some(([file]) => file === protectedFile)).toBe(false);
+  });
+
   it("distinguishes an unloaded runtime from an absent installed service", async () => {
     loaded = false;
     await expect(readSystemdServiceCommandLocation(env, target)).resolves.toEqual({

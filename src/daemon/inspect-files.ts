@@ -85,7 +85,6 @@ export async function scanSystemdDir(params: {
   dir: string;
   scope: "user" | "system";
   selectedName?: string;
-  requireComplete?: boolean;
   errors?: ServiceFileInspectionError[];
 }): Promise<ScannedGatewayService[]> {
   const results: ScannedGatewayService[] = [];
@@ -94,7 +93,6 @@ export async function scanSystemdDir(params: {
     extension: ".service",
     isPotentialName: (name) => isPotentialGatewayServiceName(name, "linux", params.selectedName),
     errors: params.errors,
-    requireComplete: params.requireComplete,
   });
 
   for (const { entry, name, fullPath, contents: bytes } of candidates) {
