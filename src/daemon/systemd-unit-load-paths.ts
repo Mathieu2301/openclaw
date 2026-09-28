@@ -28,6 +28,7 @@ export function resolveSystemdUnitLoadPaths(
     ...(env.XDG_CONFIG_DIRS || "/etc/xdg").split(":"),
     ...(env.XDG_DATA_DIRS || "/usr/local/share:/usr/share").split(":"),
     "/etc",
+    "/run",
     "/usr/local/lib",
     "/usr/lib",
     "/lib",
@@ -50,12 +51,20 @@ export function resolveSystemdUnitLoadDirectories(
     sources
       .filter((root) => path.posix.isAbsolute(root))
       .flatMap((root) => kinds.map((kind) => path.posix.join(root, "systemd", kind)));
+  const generatedDirs = (sources: string[]) =>
+    unitDirs(sources, ["transient", "generator.early", "generator", "generator.late"]);
   return {
-    userDirs: unitDirs(
-      [...new Set([...runtimeRoots, ...userRoots])],
-      ["user", "user.control", "user.attached"],
-    ),
-    systemDirs: unitDirs(systemRoots, ["system", "system.control", "system.attached"]),
+    userDirs: [
+      ...unitDirs(
+        [...new Set([...runtimeRoots, ...userRoots])],
+        ["user", "user.control", "user.attached"],
+      ),
+      ...generatedDirs(runtimeRoots),
+    ],
+    systemDirs: [
+      ...unitDirs(systemRoots, ["system", "system.control", "system.attached"]),
+      ...generatedDirs(["/run"]),
+    ],
     complete: uid !== undefined && !env.SYSTEMD_UNIT_PATH && roots.every(path.posix.isAbsolute),
   };
 }

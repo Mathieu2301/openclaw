@@ -776,12 +776,13 @@ describe("managed Gateway inventory projections", () => {
     }
   });
 
-  it("finds Gateways in XDG and systemd control load paths before a complete build admission", async () => {
+  it("finds Gateways in XDG, runtime, and systemd control load paths before build admission", async () => {
     Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
     const home = tempDirs.make("managed-systemd-load-paths-", os.tmpdir());
     const write = isolateNativeRoots(home);
     const configHome = path.join(home, "xdg-config");
     const dataHome = path.join(home, "xdg-data");
+    const runtimeDir = path.join(home, "xdg-runtime");
     await write(
       path.join(configHome, "systemd/user/config-gateway.service"),
       CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
@@ -794,9 +795,27 @@ describe("managed Gateway inventory projections", () => {
       "/etc/systemd/system.control/system-gateway.service",
       CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
     );
+    await write(
+      path.join(runtimeDir, "systemd/generator/generated-gateway.service"),
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
+    await write(
+      path.join(runtimeDir, "systemd/transient/transient-gateway.service"),
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
+    await write("/run/systemd/user/run-gateway.service", CUSTOM_OPENCLAW_GATEWAY_CONTENTS);
+    await write(
+      "/run/systemd/generator/system-generated-gateway.service",
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
 
     const result = await listManagedOpenClawGatewayServices(
-      { HOME: home, XDG_CONFIG_HOME: configHome, XDG_DATA_HOME: dataHome },
+      {
+        HOME: home,
+        XDG_CONFIG_HOME: configHome,
+        XDG_DATA_HOME: dataHome,
+        XDG_RUNTIME_DIR: runtimeDir,
+      },
       { requireComplete: true },
     );
 
@@ -804,7 +823,11 @@ describe("managed Gateway inventory projections", () => {
     expect(result.services.map((service) => service.label).toSorted()).toEqual([
       "config-gateway.service",
       "data-gateway.service",
+      "generated-gateway.service",
+      "run-gateway.service",
       "system-gateway.service",
+      "system-generated-gateway.service",
+      "transient-gateway.service",
     ]);
   });
 
