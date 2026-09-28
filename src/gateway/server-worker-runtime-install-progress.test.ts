@@ -84,6 +84,8 @@ function createHarness(
   const projection: WorkerSessionPlacementProjection = {
     placements: new Map(records.map((record) => [record.sessionId, record])),
     moves: new Map(),
+    pendingResults: new Map(),
+    workspaceJournalOwnerSessionIds: new Set(),
     environments: new Map(),
     workspaceResultReconcilingSessionIds: new Set(),
     workspaceRecoveryPendingSessionIds: new Set(),
