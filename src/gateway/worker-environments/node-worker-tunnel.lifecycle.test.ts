@@ -77,7 +77,7 @@ describe("node worker tunnel lifetime", () => {
     const node = nodes[0]!;
     nodeTransport.listCurrentNodes = async () => nodes;
     let currentTransport: NodeWorkerSupervisorTransport | undefined = nodeTransport;
-    const manager = createManager(environment(), { getTransport: () => currentTransport });
+    const manager = await createManager(environment(), { getTransport: () => currentTransport });
     const handle = await manager.start(startRequest());
     const legacy = resolveNodeWorkerLaunchToolNames(node.workerHost);
     await expect(handle.readLaunchToolNames()).resolves.toEqual(legacy);
