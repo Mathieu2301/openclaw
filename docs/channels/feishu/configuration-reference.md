@@ -103,7 +103,11 @@ to the same plugin route and signature verifier. Set
 An omitted object `host` binds to `127.0.0.1`; explicit hosts, including wildcard
 addresses, are preserved. Account entries inherit the root setting, and
 `accounts.<id>.legacyWebhook: false` disables forwarding for that account.
-A shared legacy socket stays open while another account still uses that endpoint.
+On supported 2026.9.6 hosts that predate Gateway-owned forwarding, Feishu keeps
+an account-owned compatibility listener at that endpoint, using the same
+signature checks and dispatch path. Those hosts require distinct legacy endpoints
+for separate accounts. Newer hosts keep listener ownership in the Gateway, where
+a shared legacy socket stays open while another account still uses that endpoint.
 On account shutdown, authenticated responses may finish for up to five seconds,
 matching the previous listener's close grace period. Unfinished responses close
 at that deadline; other accounts keep their routes and listeners.
