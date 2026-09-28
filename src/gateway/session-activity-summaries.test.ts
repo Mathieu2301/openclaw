@@ -34,6 +34,7 @@ import {
   runOpenClawAgentWriteTransaction,
 } from "../state/openclaw-agent-db.js";
 import { SQLITE_SESSION_WRITER_QUEUES } from "../state/openclaw-agent-write-admission.js";
+import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
@@ -144,6 +145,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
       updatedAt: 1,
     });
     service = createSessionActivitySummaries({
+      scheduler: createTestGatewayScheduler(),
       getConfig: () => cfg,
       getSessionRowProjection: () => residentProjection,
       onChanged: changed,
@@ -259,6 +261,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     expect(read()?.updatedAt).toBe(originalActivity);
     await service.dispose();
     service = createSessionActivitySummaries({
+      scheduler: createTestGatewayScheduler(),
       getConfig: () => cfg,
       onChanged: changed,
       prepareModel: prepare,
@@ -629,6 +632,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     // Offline edits rebuild asynchronously; finish the fixture before restarting its observer.
     await waitForSessionTranscriptProjection(scope);
     service = createSessionActivitySummaries({
+      scheduler: createTestGatewayScheduler(),
       getConfig: () => cfg,
       onChanged: changed,
       prepareModel: prepare,
@@ -720,6 +724,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(1));
     const oldService = service;
     service = createSessionActivitySummaries({
+      scheduler: createTestGatewayScheduler(),
       getConfig: () => cfg,
       onChanged: changed,
       prepareModel: async () => prepared,

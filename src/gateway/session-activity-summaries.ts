@@ -25,6 +25,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getAgentRunContext } from "../infra/agent-run-registry.js";
 import { computeBackoff } from "../infra/backoff.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import type { GatewayScheduledJob, GatewayScheduler } from "../infra/gateway-scheduler.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { redactToolPayloadText } from "../logging/redact.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -107,6 +108,7 @@ export type SessionActivitySummaryService = {
 };
 
 export function createSessionActivitySummaries(deps: {
+  scheduler: GatewayScheduler;
   getConfig: () => OpenClawConfig;
   getSessionRowProjection?: () => SessionRowProjection | undefined;
   onChanged: (target: ActivitySummaryTarget & { storePath: string }) => void;
@@ -117,11 +119,11 @@ export function createSessionActivitySummaries(deps: {
   const queue: Tracked[] = [];
   const running = new Set<Promise<void>>();
   const modelBackoffs = new Map<string, { until: number; failures: number }>();
-  let pumpTimer: ReturnType<typeof setTimeout> | undefined;
+  let pumpJob: GatewayScheduledJob | undefined;
   const owner = Symbol("activity-summary-owner");
   let active = 0;
   let disposed = false;
-  const now = () => Date.now();
+  const now = () => deps.scheduler.now();
   const modelRef = (target: ActivitySummaryTarget) =>
     resolveUtilityModelRefForAgent({ cfg: deps.getConfig(), agentId: target.agentId });
   const scope = (target: ActivitySummaryTarget) => ({
@@ -535,9 +537,9 @@ export function createSessionActivitySummaries(deps: {
     }
   };
   const pump = () => {
-    clearTimeout(pumpTimer);
-    pumpTimer = undefined;
-    if (disposed) {
+    pumpJob?.cancel();
+    pumpJob = undefined;
+    if (disposed || deps.scheduler.signal.aborted) {
       return;
     }
     while (active < 2 && queue.length) {
@@ -553,8 +555,14 @@ export function createSessionActivitySummaries(deps: {
       });
       if (index < 0) {
         if (Number.isFinite(earliest)) {
-          pumpTimer = setTimeout(pump, Math.min(earliest - now(), HOUR_MS));
-          pumpTimer.unref?.();
+          pumpJob = deps.scheduler.schedule({
+            id: "session-activity-summary-pump",
+            atMs: earliest,
+            run: () => {
+              pump();
+              return Promise.all(running);
+            },
+          });
         }
         return;
       }
@@ -668,7 +676,7 @@ export function createSessionActivitySummaries(deps: {
     },
     async dispose() {
       disposed = true;
-      clearTimeout(pumpTimer);
+      pumpJob?.cancel();
       modelBackoffs.clear();
       unsubscribeIdentity();
       for (const state of states.values()) {
