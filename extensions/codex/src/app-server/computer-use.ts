@@ -17,12 +17,14 @@ import {
   createComputerUseRequest,
   runCodexComputerUseLiveTest,
   skippedLiveTestStatus,
-  type CodexComputerUseLiveTestStatus,
-  type CodexComputerUseRepairStatus,
   type CodexComputerUseRequest,
 } from "./computer-use-readiness.js";
 import { assertNotSymlink } from "./computer-use-service-path.js";
-import { unavailableStatus } from "./computer-use-status.js";
+import {
+  unavailableStatus,
+  type CodexComputerUseStatus,
+  type CodexComputerUseStatusReason,
+} from "./computer-use-status.js";
 import {
   hasLegacyCodexComputerUseMcpPolicy,
   isLegacyCodexComputerUsePluginDisabled,
@@ -61,56 +63,7 @@ import {
   type CodexAppServerClientLease,
 } from "./shared-client.js";
 
-type CodexComputerUseStatusReason =
-  | "disabled"
-  | "marketplace_missing"
-  | "plugin_not_installed"
-  | "plugin_disabled"
-  | "mcp_missing"
-  | "live_test_failed"
-  | "ready"
-  | "check_failed"
-  | "auto_install_blocked";
-
-type CodexComputerUseInstallationStatus =
-  | "disabled"
-  | "marketplace_missing"
-  | "not_installed"
-  | "unchecked"
-  | "installed_disabled"
-  | "installed";
-
-type CodexComputerUseExposureStatus = "skipped" | "missing" | "available";
-
-type CodexComputerUseStatusSection = {
-  status: string;
-  ok: boolean;
-  message: string;
-};
-
-export type CodexComputerUseStatus = {
-  enabled: boolean;
-  ready: boolean;
-  reason: CodexComputerUseStatusReason;
-  installed: boolean | null;
-  pluginEnabled: boolean;
-  mcpServerAvailable: boolean;
-  pluginName: string;
-  mcpServerName: string;
-  marketplaceName?: string;
-  marketplacePath?: string;
-  tools: string[];
-  installation: CodexComputerUseStatusSection & {
-    status: CodexComputerUseInstallationStatus;
-  };
-  exposure: CodexComputerUseStatusSection & {
-    status: CodexComputerUseExposureStatus;
-  };
-  liveTest: CodexComputerUseLiveTestStatus;
-  repair?: CodexComputerUseRepairStatus;
-  warnings: string[];
-  message: string;
-};
+export type { CodexComputerUseStatus } from "./computer-use-status.js";
 
 class CodexComputerUseSetupError extends Error {
   readonly status: CodexComputerUseStatus;
