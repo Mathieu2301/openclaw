@@ -11,10 +11,12 @@ type VisitorProfile = {
   id: string;
   emails: string[];
   role?: string;
+  githubIdentity?: { login: string } | null;
 };
 
 type VisitorGatewayAccess = {
   describe: (email: string) => string;
+  verifiedGithubLogin: (email: string) => string | undefined;
   assertInvitable: (email: string) => void;
 };
 
@@ -39,6 +41,7 @@ export function createVisitorAccessReader(
     const access = (email: string) => describeAccess(byEmail.get(email), roles);
     return {
       describe: (email) => access(email).description,
+      verifiedGithubLogin: (email) => byEmail.get(email)?.githubIdentity?.login,
       assertInvitable(email) {
         resolveVisitorRole(config);
         const result = access(email);

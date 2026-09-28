@@ -102,16 +102,24 @@ Guest admission or restore authority for unfinished work.
 
 ## Invite, inspect, and revoke visitors
 
-| Tool             | Input                                                 | Result                                                                                     |
-| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `visitor_invite` | `github` and/or `email`; optional `days` or `forever` | Adds a grant or refreshes an existing email's expiry.                                      |
-| `visitor_list`   | `{}`                                                  | Shows grant emails, GitHub labels, dates, current Gateway access, and policy/record drift. |
-| `visitor_revoke` | `github` and/or `email`                               | Removes the matching visitor; an unknown email is a clean no-op.                           |
+| Tool             | Input                                                 | Result                                                                                                                    |
+| ---------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `visitor_invite` | `github` and/or `email`; optional `days` or `forever` | Adds a grant or refreshes an existing email's expiry.                                                                     |
+| `visitor_list`   | `{}`                                                  | Shows grant emails, verified GitHub identities, invitation input, dates, current Gateway access, and policy/record drift. |
+| `visitor_revoke` | `github` and/or `email`                               | Removes the matching visitor; an unknown email is a clean no-op.                                                          |
 
 Each tool also returns structured `details`, visible to Code Mode, with the same
 information as its text: invite returns `outcome`, `email`, optional `githubLogin`,
 `expiresAt`, `gatewayAccess`, and `signInUrl`; revoke returns `outcome`, `emails`,
 and optional `githubLogin`; list returns `counts`, `grants`, `unmanaged`, and `omitted`.
+Each listed grant keeps `githubLogin` as the original invitation input and adds
+`verifiedGithubLogin` only when the Gateway profile supplies a current verified
+identity. The listing reads the profile directory again on every call, including
+identities linked after an email-only invitation. It reports unavailable identity
+without guessing from an invitation handle or email; an email without a profile
+also reports first sign-in as pending. If the invitation handle differs from the
+verified account, both appear with their distinct labels. This display does not
+change which invitation handle `visitor_revoke` matches.
 
 For example, invite a visitor for seven days:
 

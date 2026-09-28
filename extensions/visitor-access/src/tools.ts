@@ -72,7 +72,7 @@ export function createVisitorTools(context: OpenClawPluginToolContext<2>): AnyAg
       name: "visitor_list",
       label: "List visitors",
       description:
-        "List recorded visitor grants, current Gateway access, invitation and expiry dates, and drift from the Access policy. Grant expiry does not describe independent staff access. Unmanaged policy emails are reported and retained; missing policy emails are never automatically restored.",
+        "List recorded visitor grants, current verified GitHub identities separately from invitation input, current Gateway access, invitation and expiry dates, and drift from the Access policy. Grant expiry does not describe independent staff access. Unmanaged policy emails are reported and retained; missing policy emails are never automatically restored.",
       parameters: Type.Object({}, { additionalProperties: false }),
       outputSchema: Type.Union([visitorListDetailsSchema, visitorToolErrorSchema]),
       run: (service: VisitorAccessService) => service.list(assertCurrent),

@@ -287,7 +287,7 @@ describe("visitor-access plugin lifecycle", () => {
         type: "text",
         text: [
           "Visitors: 1 recorded; 2 in policy. Drift: 1 unmanaged, 0 missing from policy.",
-          'visitor@example.test | GitHub unknown | invited 2026-08-01T00:00:00.000Z | grant expires 2026-08-08T00:00:00.000Z | managed | Gateway access: restricted guest (default role "external-work"; first sign-in pending)',
+          'visitor@example.test | Verified GitHub: unavailable | invited 2026-08-01T00:00:00.000Z | grant expires 2026-08-08T00:00:00.000Z | managed | Gateway access: restricted guest (default role "external-work"; first sign-in pending)',
           'manual@example.test | UNMANAGED: no grant record; retained until explicit revoke. | Gateway access: restricted guest (default role "external-work"; first sign-in pending)',
         ].join("\n"),
       },
@@ -337,6 +337,83 @@ describe("visitor-access plugin lifecycle", () => {
       expect(Value.Check(schema, result.details)).toBe(true);
     }
   });
+
+  it.each([undefined, "invitation-login"])(
+    "lists current verified identity separately from invitation input %s",
+    async (github) => {
+      const policy = createPolicyFetch();
+      vi.stubGlobal("fetch", policy.fetcher);
+      const registered = registerPlugin();
+      await registered.start();
+      await registered.execute("visitor_invite", { email: "alias@example.test", github, days: 7 });
+      const grant = await registered.store.lookup("alias@example.test");
+
+      const pending = await registered.execute("visitor_list");
+      expect(pending.content).toEqual([
+        { type: "text", text: expect.stringContaining("Verified GitHub: unavailable") },
+      ]);
+      expect(pending.content).toEqual([
+        { type: "text", text: expect.stringContaining("first sign-in pending") },
+      ]);
+
+      // The directory selects the verified primary account, or null when none is selected.
+      for (const login of ["verified-person", "current-person", null]) {
+        registered.gatewayRequest.mockResolvedValue({
+          profiles: [
+            {
+              id: "linked-person",
+              emails: ["primary@example.test", "alias@example.test"],
+              githubIdentity: login ? { login } : null,
+            },
+            {
+              id: "unrelated-person",
+              emails: ["unrelated@example.test"],
+              githubIdentity: { login: "other-person" },
+            },
+          ],
+        });
+        const listed = await registered.execute("visitor_list");
+        expect(listed.content).toEqual([
+          {
+            type: "text",
+            text: expect.stringContaining(
+              `Verified GitHub: ${login ? `@${login}` : "unavailable"}`,
+            ),
+          },
+        ]);
+        expect(listed.content).not.toEqual([
+          { type: "text", text: expect.stringContaining("first sign-in pending") },
+        ]);
+        if (github) {
+          expect(listed.content).toEqual([
+            {
+              type: "text",
+              text: expect.stringContaining("invitation GitHub: @invitation-login (input only)"),
+            },
+          ]);
+        }
+        expect(listed.details).toMatchObject({
+          grants: [
+            {
+              email: "alias@example.test",
+              ...(github ? { githubLogin: github } : {}),
+              ...(login ? { verifiedGithubLogin: login } : {}),
+            },
+          ],
+        });
+        if (!login) {
+          expect(listed.details).not.toHaveProperty("grants.0.verifiedGithubLogin");
+        }
+        const schema = registered.tools.get("visitor_list")?.outputSchema;
+        if (!schema) {
+          throw new Error("visitor_list did not declare an output schema");
+        }
+        expect(Value.Check(schema, listed.details)).toBe(true);
+      }
+      expect(await registered.store.lookup("alias@example.test")).toEqual(grant);
+      expect(policy.emails()).toEqual(["alias@example.test"]);
+    },
+  );
 
   it("denies available visitor tools without trusted owner authority", async () => {
     const policy = createPolicyFetch();

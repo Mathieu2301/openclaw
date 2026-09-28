@@ -493,11 +493,17 @@ export class VisitorAccessService {
               ? "EXPIRED; provider cleanup pending"
               : "managed";
           const gatewayAccess = access.describe(grant.email);
+          const verifiedGithubLogin = access.verifiedGithubLogin(grant.email);
+          const github = `Verified GitHub: ${verifiedGithubLogin ? `@${verifiedGithubLogin}` : "unavailable"}`;
+          const invitationGithub = grant.githubLogin
+            ? ` | invitation GitHub: @${grant.githubLogin} (input only)`
+            : "";
           return {
-            line: `${grant.email} | ${grant.githubLogin ? `@${grant.githubLogin}` : "GitHub unknown"} | invited ${new Date(grant.createdAt).toISOString()} | grant expires ${expiryText(grant.expiresAt)} | ${state} | ${gatewayAccess}`,
+            line: `${grant.email} | ${github}${invitationGithub} | invited ${new Date(grant.createdAt).toISOString()} | grant expires ${expiryText(grant.expiresAt)} | ${state} | ${gatewayAccess}`,
             grant: {
               email: grant.email,
               ...(grant.githubLogin ? { githubLogin: grant.githubLogin } : {}),
+              ...(verifiedGithubLogin ? { verifiedGithubLogin } : {}),
               invitedAt: new Date(grant.createdAt).toISOString(),
               expiresAt: grant.expiresAt === null ? null : new Date(grant.expiresAt).toISOString(),
               state: missingFromPolicy ? "missing_from_policy" : expired ? "expired" : "managed",

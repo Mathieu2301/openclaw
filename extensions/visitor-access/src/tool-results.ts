@@ -40,7 +40,15 @@ export const visitorListDetailsSchema = Type.Object(
       Type.Object(
         {
           email: Type.String(),
-          githubLogin: Type.Optional(Type.String()),
+          githubLogin: Type.Optional(
+            Type.String({ description: "Invitation input, not a verified identity." }),
+          ),
+          verifiedGithubLogin: Type.Optional(
+            Type.String({
+              description:
+                "Current verified GitHub login from the Gateway profile, when available.",
+            }),
+          ),
           invitedAt: Type.String(),
           expiresAt: expiresAtSchema,
           state: Type.Union(
