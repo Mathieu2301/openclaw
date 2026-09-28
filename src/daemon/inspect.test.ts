@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { detectMarkerLineWithGateway } from "./inspect-markers.js";
 import {
-  detectMarkerLineWithGateway,
   findExtraGatewayServices,
   findSystemGatewayServices,
   listManagedOpenClawGatewayServices,
@@ -523,9 +523,15 @@ describe("managed Gateway inventory projections", () => {
 
   function isolateNativeRoots(home: string) {
     const roots = [
-      "/etc/systemd/system",
-      "/usr/lib/systemd/system",
-      "/lib/systemd/system",
+      "/etc/systemd",
+      "/etc/xdg/systemd",
+      "/run/systemd",
+      "/run/user",
+      "/usr/local/lib/systemd",
+      "/usr/local/share/systemd",
+      "/usr/lib/systemd",
+      "/usr/share/systemd",
+      "/lib/systemd",
       "/Library/LaunchAgents",
       "/Library/LaunchDaemons",
     ].map((root) => path.normalize(root));
@@ -768,6 +774,38 @@ describe("managed Gateway inventory projections", () => {
       expect(service).not.toHaveProperty("extra");
       expect(service).not.toHaveProperty("managedGateway");
     }
+  });
+
+  it("finds Gateways in XDG and systemd control load paths before a complete build admission", async () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "linux" });
+    const home = tempDirs.make("managed-systemd-load-paths-", os.tmpdir());
+    const write = isolateNativeRoots(home);
+    const configHome = path.join(home, "xdg-config");
+    const dataHome = path.join(home, "xdg-data");
+    await write(
+      path.join(configHome, "systemd/user/config-gateway.service"),
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
+    await write(
+      path.join(dataHome, "systemd/user/data-gateway.service"),
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
+    await write(
+      "/etc/systemd/system.control/system-gateway.service",
+      CUSTOM_OPENCLAW_GATEWAY_CONTENTS,
+    );
+
+    const result = await listManagedOpenClawGatewayServices(
+      { HOME: home, XDG_CONFIG_HOME: configHome, XDG_DATA_HOME: dataHome },
+      { requireComplete: true },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.services.map((service) => service.label).toSorted()).toEqual([
+      "config-gateway.service",
+      "data-gateway.service",
+      "system-gateway.service",
+    ]);
   });
 
   it.each([
