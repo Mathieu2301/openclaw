@@ -168,7 +168,7 @@ stops before spawning and records `candidate-config-read-recursion`.
 Both runtimes use the same result channel for synchronous and asynchronous reads;
 config diagnostics stay separate from the result.
 
-When a writable managed Gateway service points at another global installation,
+When a writable managed Node Gateway service points at another global installation,
 the update keeps the active CLI's installation as its target and refreshes the
 service through `gateway install --force` before verifying the restarted Gateway.
 The old service command remains the recovery identity until that handoff succeeds.
@@ -179,6 +179,23 @@ the order of retained `PATH` entries and prepends newly added managed entries.
 Paths carried over solely from the old definition still pass the existing safety
 filters. If the definition cannot be preserved, reconciliation requires manual repair.
 Deployment-owned definitions retain their existing installation owner.
+
+An owned managed **Bun** Gateway at a different package root uses the existing
+service-root update route: only the Gateway installation advances, and the
+invoking CLI installation stays unchanged. The updater validates the service's
+actual Bun executable against the Bun 1.4+ and WAL-safe `node:sqlite` requirements;
+Bun's emulated Node version is not checked against `engines.node`. Bun-owned
+package-manager probes and installs use that verified executable, and the
+existing install/restart path retains the recorded runtime pin. A path under
+`~/.openclaw` alone does not establish Bun package-manager ownership. See
+[Bun-only installs](/install/bun-compatibility#bun-only-installs).
+
+The installed updater runs first. Published 2026.9.6 still tries cross-root
+rebinding for a Bun service and refuses with `original-service-unverified`
+before stopping it; the Gateway keeps running. The service-root route applies
+only when the updater driving the update contains this fix. Installing a newer
+candidate cannot repair that first hop.
+
 Pending package-publication recovery in either the CLI or selected service
 installation blocks writable preparation. Follow the package recovery command
 reported by the update before retrying; Doctor does not clear those artifacts.
@@ -212,7 +229,7 @@ containing the managed-helper authority fix, subsequent updates started through
 **from** the fixed version; it does not repair the 2026.9.4 macOS handoff in place.
 </Note>
 
-Package updates inspect the exact candidate's Node requirement before activation.
+Package updates that select Node inspect the exact candidate's Node requirement before activation.
 An incompatible runtime produces `node-runtime-preflight`, with the target
 version, required engine range, selected Node version, and an upgrade command.
 npm directory permission failures produce `global-install-permission-denied`,
