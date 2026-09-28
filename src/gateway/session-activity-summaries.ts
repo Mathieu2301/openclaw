@@ -85,7 +85,6 @@ type Tracked = ActivitySummaryTarget & {
   failures: number;
   controller?: AbortController;
   inFlight: boolean;
-  queued: boolean;
   dirty: boolean;
   immediate: boolean;
   lastStartedAt: number;
@@ -212,7 +211,7 @@ export function createSessionActivitySummaries(deps: {
     }
     if (states.size >= MAX_TRACKED) {
       const evictable = [...states.values()].find(
-        (candidate) => !candidate.inFlight && !candidate.queued,
+        (candidate) => !candidate.inFlight && !queue.includes(candidate),
       );
       if (!evictable) {
         return undefined;
@@ -228,7 +227,6 @@ export function createSessionActivitySummaries(deps: {
       retryPending: false,
       failures: 0,
       inFlight: false,
-      queued: false,
       dirty: false,
       immediate: false,
       lastStartedAt: 0,
@@ -281,7 +279,7 @@ export function createSessionActivitySummaries(deps: {
     if (state.inFlight) {
       return;
     }
-    if (!state.queued && !state.retryPending && state.retryAt <= now()) {
+    if (!queue.includes(state) && !state.retryPending && state.retryAt <= now()) {
       state.retryAt = 0;
       state.failures = 0;
     }
@@ -302,8 +300,7 @@ export function createSessionActivitySummaries(deps: {
     publish(state, "updating");
     // Every admitted session occupies at most one queue entry. The tracked-session
     // bound also bounds pending work, so a full Activity page cannot overflow it.
-    if (!state.queued) {
-      state.queued = true;
+    if (!queue.includes(state)) {
       queue.push(state);
     }
     pump();
@@ -485,7 +482,6 @@ export function createSessionActivitySummaries(deps: {
         }
         const failure = resolveModelFallbackError(error);
         const reason = failure.kind === "failover" ? failure.error.reason : undefined;
-        const message = formatErrorMessage(error);
         const transient =
           (reason === "overloaded" ||
             reason === "server_error" ||
@@ -521,7 +517,7 @@ export function createSessionActivitySummaries(deps: {
         publish(state, state.retryPending ? "updating" : "unavailable");
         log.debug("Activity recap deferred", {
           agentId: state.agentId,
-          error: message,
+          error: formatErrorMessage(error),
           retryScheduled: state.retryPending,
         });
       }
@@ -538,7 +534,6 @@ export function createSessionActivitySummaries(deps: {
   };
   const pump = () => {
     pumpJob?.cancel();
-    pumpJob = undefined;
     if (disposed || deps.scheduler.signal.aborted) {
       return;
     }
@@ -558,16 +553,17 @@ export function createSessionActivitySummaries(deps: {
           pumpJob = deps.scheduler.schedule({
             id: "session-activity-summary-pump",
             atMs: earliest,
-            run: () => {
+            run: async () => {
               pump();
-              return Promise.all(running);
+              while (running.size > 0) {
+                await Promise.all(running);
+              }
             },
           });
         }
         return;
       }
       const state = queue.splice(index, 1)[0]!;
-      state.queued = false;
       if (!current(state)) {
         continue;
       }
@@ -584,10 +580,10 @@ export function createSessionActivitySummaries(deps: {
       running.add(work);
     }
   };
-  const request = (target: ActivitySummaryTarget, immediate: boolean) => {
+  const request = (target: ActivitySummaryTarget) => {
     const state = admit(target);
     if (state) {
-      schedule(state, immediate);
+      schedule(state, true);
     }
     return state;
   };
@@ -618,7 +614,7 @@ export function createSessionActivitySummaries(deps: {
       if (isCronSessionKey(target.key)) {
         return { state: "unavailable" };
       }
-      const state = request(target, true);
+      const state = request(target);
       const projected = projectSessionActivitySummary({
         ...target,
         cfg: deps.getConfig(),
@@ -662,7 +658,7 @@ export function createSessionActivitySummaries(deps: {
         event.agentId ?? runContext?.agentId,
       );
       if (target) {
-        request(target, true);
+        request(target);
       }
     },
     handleLifecycle(event) {
@@ -671,7 +667,7 @@ export function createSessionActivitySummaries(deps: {
       }
       const target = eventTarget(event.sessionKey, event.agentId);
       if (target) {
-        request(target, true);
+        request(target);
       }
     },
     async dispose() {

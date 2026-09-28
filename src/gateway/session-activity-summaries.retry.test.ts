@@ -203,7 +203,7 @@ describe("Activity recap admission, refresh, and provider recovery", () => {
     },
   );
 
-  it.each(["complete", "shutdown"] as const)(
+  it.each(["complete", "shutdown", "continuation"] as const)(
     "coalesces a late refresh wake and joins its model work on %s",
     async (outcome) => {
       await service.dispose();
@@ -221,8 +221,10 @@ describe("Activity recap admission, refresh, and provider recovery", () => {
       service.ensure(target);
       await initial.promise;
       await appendWork(target);
+      fakeTime();
       const started = createDeferred();
       const completion = createDeferred<typeof result>();
+      const continuation = createDeferred<typeof result>();
       complete.mockImplementationOnce(() => {
         started.resolve();
         return completion.promise;
@@ -247,18 +249,44 @@ describe("Activity recap admission, refresh, and provider recovery", () => {
           expect(complete.mock.calls[1]![0].abortSignal?.aborted).toBe(true);
           completion.resolve(result);
           await Promise.all([stop, disposal]);
+        } else if (outcome === "continuation") {
+          await persistSessionTranscriptTurn(scope(target), {
+            messages: [
+              {
+                eventId: "continued-work",
+                parentId: "new-work",
+                message: { role: "assistant", content: "Verified the follow-on work." },
+              },
+            ],
+            touchSessionEntry: false,
+          });
+          const continued = createDeferred();
+          complete.mockImplementationOnce(() => {
+            continued.resolve();
+            return continuation.promise;
+          });
+          service.ensure(target);
+          completion.resolve(result);
+          await continued.promise;
+          const stopped = vi.fn();
+          const stop = scheduler.stop().then(stopped);
+          await vi.advanceTimersByTimeAsync(0);
+          expect(stopped).not.toHaveBeenCalled();
+          continuation.resolve(result);
+          await stop;
         } else {
           completion.resolve(result);
         }
         await wake;
         await time.advanceBy(3_600_000);
-        expect(complete).toHaveBeenCalledTimes(2);
+        expect(complete).toHaveBeenCalledTimes(outcome === "continuation" ? 3 : 2);
         expect(loadSessionEntryReadOnly(scope(target))?.activitySummary?.coveredMessages).toBe(
-          outcome === "shutdown" ? 1 : 2,
+          outcome === "shutdown" ? 1 : outcome === "continuation" ? 3 : 2,
         );
         expect(time.armedAtMs).toBeNull();
       } finally {
         completion.resolve(result);
+        continuation.resolve(result);
         await wake;
       }
     },
