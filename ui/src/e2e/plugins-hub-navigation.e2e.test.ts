@@ -292,7 +292,9 @@ suite.define(() => {
                 categories: ["models"],
               },
             ]
-          : [fal],
+          : category === "models"
+            ? []
+            : [fal],
         categories: discoveryCategories.categories,
       }),
       ...(!category ? { categories: discoveryCategories.categories } : {}),
@@ -312,6 +314,11 @@ suite.define(() => {
       await chips.getByRole("button", { name: "Media", exact: true }).waitFor();
       const cards = page.locator(".plugin-catalog-card:not(.plugin-catalog-card--skeleton)");
       if (captureUiProof) {
+        await gateway.setMethodResponse("plugins.catalog.browse", browse(before, "models"));
+        await chips.getByRole("button", { name: "Models", exact: true }).click();
+        await gateway.waitForRequest("plugins.catalog.browse", { match: { category: "models" } });
+        await expect.poll(() => cards.count()).toBe(2);
+        await captureScreenshot(page, "models-discovery-before.png");
         await gateway.setMethodResponse("plugins.catalog.browse", browse(before, "media"));
         await chips.getByRole("button", { name: "Media", exact: true }).click();
         await gateway.waitForRequest("plugins.catalog.browse", { match: { category: "media" } });
@@ -326,6 +333,19 @@ suite.define(() => {
       await expect
         .poll(() => page.locator('[data-catalog-section="media"] .plugin-catalog-card').count())
         .toBe(3);
+      if (captureUiProof) {
+        const priorModels = (
+          await gateway.getRequests("plugins.catalog.browse", { category: "models" })
+        ).length;
+        await gateway.setMethodResponse("plugins.catalog.browse", browse(local, "models"));
+        await chips.getByRole("button", { name: "Models", exact: true }).click();
+        await gateway.waitForRequest("plugins.catalog.browse", {
+          after: priorModels,
+          match: { category: "models" },
+        });
+        await expect.poll(() => cards.count()).toBe(2);
+        await captureScreenshot(page, "models-discovery-after.png");
+      }
       const priorMedia = (
         await gateway.getRequests("plugins.catalog.browse", { category: "media" })
       ).length;
