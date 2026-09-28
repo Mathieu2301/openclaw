@@ -115,6 +115,7 @@ export function createBeforeFinalizeEvent() {
     isError: false,
     incompleteTerminalAssistant: false,
     hadDeterministicSideEffect: false,
+    hasPendingContinuation: false,
   };
 }
 
