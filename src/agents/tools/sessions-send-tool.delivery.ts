@@ -124,7 +124,7 @@ export async function startSessionsSendAgentRun(params: {
     }
     const { inputProvenance, message: messageText, sourceReplyDeliveryMode } = params.sendParams;
     if (activeRunSessionId && messageText) {
-      if (params.restrictSessionControls) {
+      if (params.mode === "steer" && params.restrictSessionControls) {
         control = await prepareSessionToolControlTarget({
           cfg: params.cfg,
           agentId: params.sessionStoreTarget.agentId,
