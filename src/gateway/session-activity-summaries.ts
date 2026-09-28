@@ -120,7 +120,6 @@ export function createSessionActivitySummaries(deps: {
   const modelBackoffs = new Map<string, { until: number; failures: number }>();
   let pumpJob: GatewayScheduledJob | undefined;
   const owner = Symbol("activity-summary-owner");
-  let active = 0;
   let disposed = false;
   const now = () => deps.scheduler.now();
   const modelRef = (target: ActivitySummaryTarget) =>
@@ -537,7 +536,7 @@ export function createSessionActivitySummaries(deps: {
     if (disposed || deps.scheduler.signal.aborted) {
       return;
     }
-    while (active < 2 && queue.length) {
+    while (running.size < 2 && queue.length) {
       let earliest = Infinity;
       const index = queue.findIndex((candidate) => {
         if (!current(candidate)) {
@@ -567,13 +566,11 @@ export function createSessionActivitySummaries(deps: {
       if (!current(state)) {
         continue;
       }
-      active += 1;
       const work = run(state)
         .catch((error: unknown) => {
           log.debug("Activity recap background work failed", { error: formatErrorMessage(error) });
         })
         .finally(() => {
-          active -= 1;
           running.delete(work);
           pump();
         });
