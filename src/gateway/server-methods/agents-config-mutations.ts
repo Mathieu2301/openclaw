@@ -14,6 +14,7 @@ import { resolveSessionTranscriptsDirForAgent } from "../../config/sessions.js";
 import type { AgentConfig } from "../../config/types.agents.js";
 import type { IdentityConfig } from "../../config/types.base.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { applySystemAgentModelSelection } from "../../system-agent/setup-model-selection.js";
 
 type AgentDeleteMutationResult = {
   workspaceDir: string;
@@ -94,7 +95,6 @@ export async function updateAgentConfigEntry(
     ? await Promise.all([
         import("../../agents/model-runtime-choice.js"),
         import("../../commands/models/shared.js"),
-        import("../../system-agent/setup-model-selection.js"),
       ])
     : undefined;
   let validateSelection: (() => string | undefined) | undefined;
@@ -119,7 +119,7 @@ export async function updateAgentConfigEntry(
       }
       let next = draft;
       if (params.model && selectionModules) {
-        const [runtimeChoice, modelConfig, modelSelection] = selectionModules;
+        const [runtimeChoice, modelConfig] = selectionModules;
         const target = modelConfig.resolveModelTarget({ raw: params.model, cfg: draft });
         const choice = await runtimeChoice.preparePublishedModelRuntimeChoice({
           cfg: draft,
@@ -132,7 +132,7 @@ export async function updateAgentConfigEntry(
           throw new AgentModelSelectionError(choice.message);
         }
         validateSelection = choice.validate;
-        next = await modelSelection.applySystemAgentModelSelection({
+        next = await applySystemAgentModelSelection({
           config: draft,
           model: params.model,
           agentRuntimeId: choice.runtimeId,
