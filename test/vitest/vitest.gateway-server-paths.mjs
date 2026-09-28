@@ -84,6 +84,7 @@ export const gatewayDatabaseWorkerTestFiles = [
   "src/gateway/node-invoke-plugin-policy.test.ts",
   "src/gateway/node-invoke-system-run-approval.test.ts",
   "src/gateway/node-reapproval-coordinator.test.ts",
+  "src/gateway/openresponses-session-store.test.ts",
   "src/gateway/operator-approval-mcp-grants.test.ts",
   "src/gateway/operator-approval-placement-grants.test.ts",
   "src/gateway/operator-approval-receipts.test.ts",
