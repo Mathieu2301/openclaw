@@ -46,7 +46,7 @@ type WorkerInferenceStreamAdapterOptions = {
   computerContextEpoch?: ComputerContextEpoch;
 };
 
-type WorkerInferenceStreamRequest = {
+export type WorkerInferenceStreamRequest = {
   modelRef: WorkerInferenceModelRef;
   context: WorkerInferenceContext;
   options: WorkerInferenceOptions;

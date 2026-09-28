@@ -1,7 +1,6 @@
 import type { SkillResourceDelivery } from "../../packages/gateway-protocol/src/schema/skill-resources.js";
 import type { WorkerTranscriptMessage } from "../../packages/gateway-protocol/src/schema/worker-admission.js";
 import type {
-  WorkerInferenceContext,
   WorkerInferenceModelRef,
   WorkerInferenceOptions,
 } from "../../packages/gateway-protocol/src/schema/worker-inference.js";
@@ -40,6 +39,7 @@ import {
   toWorkerInferenceContext,
   type WorkerTranscriptClient,
 } from "./embedded-agent-transcript.runtime.js";
+import type { WorkerInferenceStreamRequest } from "./inference-stream.runtime.js";
 import type { WorkerBrowserLaunchDescriptor, WorkerLaunchPlan } from "./launch-descriptor.js";
 import {
   WORKER_LOCAL_TOOL_NAMES,
@@ -56,16 +56,9 @@ function toWorkerAgentError(value: unknown, fallback: string): Error {
   return value instanceof Error ? value : new Error(fallback, { cause: value });
 }
 
-type WorkerEmbeddedInferenceRequest = {
-  modelRef: WorkerInferenceModelRef;
-  context: WorkerInferenceContext;
-  options: WorkerInferenceOptions;
-  signal?: AbortSignal;
-};
-
 type WorkerEmbeddedInferenceClient = {
   stream: (
-    request: WorkerEmbeddedInferenceRequest,
+    request: WorkerInferenceStreamRequest,
   ) => AssistantMessageEventStreamLike | Promise<AssistantMessageEventStreamLike>;
 };
 

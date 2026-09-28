@@ -186,30 +186,43 @@ describe("AcpSessionManager backend failover", () => {
     expect(harness.fallbackRuntime.runTurn).toHaveBeenCalledTimes(1);
   });
 
-  it("fails over when the primary backend is registered but unavailable", async () => {
-    const harness = setupFailoverBackends({
-      primaryUnavailableError: new AcpRuntimeError(
-        "ACP_BACKEND_UNAVAILABLE",
-        "primary backend unavailable",
-      ),
-    });
+  it.each(["available", "unavailable"])(
+    "settles primary-backend unavailability with an %s fallback",
+    async (fallback) => {
+      const harness = setupFailoverBackends({
+        primaryUnavailableError: new AcpRuntimeError(
+          "ACP_BACKEND_UNAVAILABLE",
+          "primary backend unavailable",
+        ),
+      });
+      if (fallback === "unavailable") {
+        harness.fallbackRuntime.ensureSession.mockRejectedValue(
+          new AcpRuntimeError("ACP_BACKEND_UNAVAILABLE", "fallback backend unavailable"),
+        );
+      }
 
-    const manager = new AcpSessionManager();
-    await expect(
-      manager.runTurn({
+      const turn = new AcpSessionManager().runTurn({
         provenance: "system",
         cfg: harness.cfg,
         sessionKey: harness.sessionKey,
         text: "fallback",
         mode: "prompt",
         requestId: "r-unavailable",
-      }),
-    ).resolves.toBeUndefined();
-
-    expect(hoisted.requireAcpRuntimeBackendMock).toHaveBeenCalledWith("primary-backend");
-    expect(hoisted.requireAcpRuntimeBackendMock).toHaveBeenCalledWith("fallback-backend");
-    expect(harness.fallbackRuntime.runTurn).toHaveBeenCalledTimes(1);
-  });
+      });
+      if (fallback === "available") {
+        await expect(turn).resolves.toBeUndefined();
+        expect(harness.fallbackRuntime.runTurn).toHaveBeenCalledTimes(1);
+      } else {
+        await expect(turn).rejects.toMatchObject({
+          code: "ACP_BACKEND_UNAVAILABLE",
+          message: expect.stringMatching(/All ACP backends failed \(2\)/),
+        });
+        expect(harness.fallbackRuntime.runTurn).not.toHaveBeenCalled();
+      }
+      expect(hoisted.requireAcpRuntimeBackendMock).toHaveBeenCalledWith("primary-backend");
+      expect(hoisted.requireAcpRuntimeBackendMock).toHaveBeenCalledWith("fallback-backend");
+    },
+  );
 
   it("fails over for common rate limit wording before output", async () => {
     const harness = setupFailoverBackends();
