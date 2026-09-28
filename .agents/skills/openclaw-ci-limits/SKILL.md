@@ -31,6 +31,13 @@ availability, Blacksmith control-plane health, and downstream queue drains.
 
 ## Rejected Experiments
 
+- **Boundary asynchronous input preparation (2026-09-26):** Adding the existing
+  `CompilerInputSnapshot.prepare()` calls at the three declaration/boundary
+  callers increased full cold validation from 464.21s to 544.68s on the same
+  four-CPU/15.42-GiB Testbox; warm validation increased from 12.62s to 14.63s.
+  All 125 plugin checks and the canary passed, but CPU use also increased.
+  The six caller additions were removed. Do not repeat this as an assumed
+  speedup; any different use needs measured end-to-end benefit.
 - **Windows pnpm store (2026-09-20):** Original receipts from
   [run 35547255790](https://github.com/openclaw/openclaw/actions/runs/35547255790)
   measured median complete setup at 45.295s cold versus 52.738s restored
@@ -238,6 +245,24 @@ These are intentionally guarded by the `ci-workflow-guards`,
   outage override remains intact. Budget three control-job registrations per eligible
   hybrid first attempt when optional hosted admission is closed, two when admitted,
   and one per normal Blacksmith run. All occur in the reserved non-Node inventory.
+  Selected baseline ratchets and Node rows start independently after preflight.
+  Keep the standalone ratchet owner and exact merge-parent/base checks; the final
+  gate still requires every selected ratchet to pass. Trusted same-repository
+  hybrid first attempts use the existing 4-class for the ratchet job, with its
+  measured 91-second bound adding at most 6.07 class-vCPU-minutes and no jobs.
+  Preserve the existing hosted fallbacks and deadline.
+  The existing `check-plan` prerequisite keeps the 4-class on trusted same-repository
+  hybrid PR first attempts, automatic main runs, and admitted qualification dispatches. Its 165–209s hosted wall delayed narrowed type/lint consumers; use
+  the unchanged 209s as a conservative 13.93-vCPU-minute added-cost bound until
+  native proof measures it. This consumes one non-Node reserve slot and adds no
+  jobs. Exact dependency restoration still requires an actual self-hosted runner
+  and same-repository cache trust. Admitted qualification dispatches retain the
+  automatic first attempt's Blacksmith routes. Keep compiler inventory
+  completeness and the observer's exact count.
+  This measured control-job offload is hybrid-only; RunsOn keeps its existing
+  hosted standalone ratchet and check-plan routes, including qualification dispatches.
+  Trusted fork PRs retain hosted hybrid check planning and standalone ratchets,
+  preserving the existing cache trust restrictions.
   Optional compiler/check offloads reject observed hosted assignment waits at
   sixty seconds; the former three-minute cutoff exceeded the latency objective.
   API and job deadlines remain unchanged.
@@ -248,7 +273,10 @@ These are intentionally guarded by the `ci-workflow-guards`,
   eligible PR, or uses hosted Ubuntu under the outage override. Main/manual
   matrices remain complete. The monitor starts after preflight, observes failures
   while the installed check planner waits, and uses the planner's successful
-  versioned count step for exact completion rather than its early reservations.
+  versioned count step for exact inventory rather than its early reservations.
+  With that inventory and exactly one unfinished job, it retires: no sibling work
+  remains to cancel. The aggregate still awaits and checks the final job;
+  polling bounds and cancellation authority stay unchanged.
   Existing critical-path routing serves hybrid failures; only the uncovered
   default/explicit-Blacksmith failure case adds the same 4-class route. Retries,
   ordinary manual dispatches and the GitHub override retain hosted aggregation.
@@ -267,6 +295,14 @@ These are intentionally guarded by the `ci-workflow-guards`,
   Frozen/manual targets, retries, untrusted authors and fully hosted fallback
   manifests remain outside this first-attempt limit, including existing >45-row
   fallbacks. Do not change the backend variable or existing caps to enable it.
+- The existing extension-package-boundary matrix row requests the 32-class
+  whenever its existing route selects Blacksmith. Its two-CPU compiler reserve
+  admits four children on the observed eight-CPU/30.95-GiB allocation, versus
+  two on the previous 16-class. Run 36248684656 measured a 569s complete job
+  on the 16-class; unchanged duration on the 32-class would add 151.7
+  class-vCPU-minutes (1.17% of that broad run). Include that allowance with
+  Node packing costs until native proof measures the new duration. No jobs,
+  registrations, permissions, compiler checks, or hosted eligibility are added.
 - Current fast plugin/channel contract families each share one checkout/setup.
   Their two weighted process envelopes run sequentially with unchanged include
   lists and package commands; channel invocations retain four project slots and
@@ -394,10 +430,16 @@ These are intentionally guarded by the `ci-workflow-guards`,
 - Precise and fallback plugin groups retain separate child processes, including process-bounded
   configs. Compatible envelopes, including repeated configs, run one at a time
   within 300 predicted seconds without a pair-count limit; expanded serial compact
-  jobs use 210. The rebased 124-envelope inventory emits 50 extension rows and
-  125/119/130 PR Node rows on Blacksmith/hybrid/GitHub; push Node rows are
-  57/46/55 and compact PR rows are 77/71/82. These fit the landed 130/70/90
-  PR/push/compact caps without another increase. Runtime preparation stays separate. Each original envelope retains
+  jobs use 210. Envelopes with identical preparation mode, runner and dist
+  requirements share one build before their separate sequential processes;
+  packing charges that preparation once. Different preparation modes stay
+  separate. Each job retains the 20-file database-worker ceiling and 300-second
+  estimated budget; observed hosted durations must be reported separately.
+  The earlier 124-envelope inventory projected 50 extension rows and
+  125/119/130 PR Node rows on Blacksmith/hybrid/GitHub, with 57/46/55 push Node
+  rows and 77/71/82 compact PR rows. Those are historical inventory projections;
+  validate the current inventory against the unchanged 50/130/70/90
+  extension/PR/push/compact caps. Each original envelope retains
   its file/process bounds, native shard arguments and worker limits. The complete supplemental boundary list runs in one job
   with four concurrent checks and one full-root focused-rule scan.
 - Measured Blacksmith chat/session, Gateway core-3 and infrastructure storage/state
@@ -445,7 +487,16 @@ These are intentionally guarded by the `ci-workflow-guards`,
   remain intact.
   The canonical shard executor admits two CI children only with at least eight
   available CPUs and 24 GiB actual memory; otherwise it admits one. Inner project
-  parallelism stays one and each overlapping child keeps two Vitest workers.
+  parallelism stays one during outer overlap and each overlapping child keeps two Vitest workers.
+  A serial changed-extension envelope may overlap two source-only Telegram database-worker
+  singleton processes, retaining two workers per process, only with scheduler-owned caches,
+  at least two actual CPUs and 7.5 GiB effective memory (the smaller of physical memory and
+  a positive finite process constraint). Require self-hosted Linux, an explicit current-target
+  receipt (`FROZEN_TARGET=false`), and one unchanged Node invocation from the canonical
+  runtime selector; `bun-compatible` can still select Node. Other shapes, runtimes and
+  unknown/insufficient capacity retain one inner process. Use the actual inner-cap receipt
+  in timing identity; parallel envelopes never supply serial singleton or wrapper-overhead
+  prices. Keep conservative serial placement until qualified exact parallel measurements exist.
   Gateway methods use four workers in serial, non-frozen self-hosted jobs with
   at least eight actual CPUs and 28 GiB memory, with the existing two-worker
   fallback elsewhere. Keep its worker-specific timing identity and require
