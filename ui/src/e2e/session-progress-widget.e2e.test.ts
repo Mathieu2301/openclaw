@@ -304,9 +304,16 @@ suite.define(() => {
   it("keeps target liveness when the selected agent scope changes", async () => {
     await suite.withPage(englishDesktopPageOptions, async ({ page }) => {
       const now = Date.now();
+      const runningState = {
+        hasActiveRun: true,
+        startedAt: now - 30_000,
+        status: "running",
+        updatedAt: now,
+      };
       const gateway = await installMockGateway(page, {
         sessionKey,
-        sessions: [{ key: sessionKey }],
+        // Startup and descriptor snapshots must agree with the running roster row.
+        sessions: [{ key: sessionKey, ...runningState }],
         controlUiWidgetKinds: [
           { pluginId: "session", kind: "session:progress", label: "Session progress" },
         ],
@@ -326,11 +333,7 @@ suite.define(() => {
             cases: [
               {
                 match: { agentId: "main" },
-                response: sessionListResponse(sessionKey, "Main progress dashboard", {
-                  hasActiveRun: true,
-                  startedAt: now - 30_000,
-                  updatedAt: now,
-                }),
+                response: sessionListResponse(sessionKey, "Main progress dashboard", runningState),
               },
               {
                 match: { agentId: "writer" },
