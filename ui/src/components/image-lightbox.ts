@@ -332,7 +332,7 @@ class OpenClawImageLightbox extends OpenClawLitElement {
             this.mediaKind === "image"
               ? html`<div class="zoom-controls">
                   ${renderLightboxAction("zoom-control", "chat.imageLightbox.zoomOut", !canZoom || this.scale <= 1, this.zoomOut, "−")}
-                  ${renderLightboxAction("zoom-control zoom-level", "chat.imageLightbox.resetZoom", !canZoom || this.scale === 1, this.resetZoom, `${Math.round(this.scale * 100)}%`)}
+                  ${renderLightboxAction("zoom-control zoom-level", "chat.imageLightbox.resetZoom", !canZoom || this.scale === 1, this.resetZoom, html`${Math.round(this.scale * 100)}%`)}
                   ${renderLightboxAction("zoom-control", "chat.imageLightbox.zoomIn", !canZoom || this.scale >= MAX_SCALE, this.zoomIn, "+")}
                 </div>`
               : nothing
