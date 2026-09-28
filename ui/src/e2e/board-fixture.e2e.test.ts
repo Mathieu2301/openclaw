@@ -243,6 +243,8 @@ describeStandaloneMockServer("standalone Control UI mock server", () => {
       try {
         await page.goto(new URL("/chat", fixtureServer.url).toString());
         await page.getByRole("textbox", { name: "Chat composer", exact: true }).waitFor();
+        // Compare complete payloads sampled at the same instant, including snapshotAt.
+        await page.clock.setFixedTime(Date.now());
         const [description] = (await requestPreviewGateway(page, [
           { method: "sessions.describe", params: { key: sessionKey } },
         ])) as Array<{ session: { sessionId: string } }>;
