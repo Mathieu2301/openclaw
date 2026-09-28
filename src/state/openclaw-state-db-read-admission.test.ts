@@ -47,7 +47,8 @@ const hostBirth: {
   paths: Set<string>;
   mode: "zero" | "changing" | "ctime" | undefined;
   relocated: boolean;
-} = { paths: new Set(), mode: undefined, relocated: false };
+  ctimeNs: bigint;
+} = { paths: new Set(), mode: undefined, relocated: false, ctimeNs: 1n };
 
 afterEach(async () => {
   try {
@@ -58,6 +59,7 @@ afterEach(async () => {
     hostBirth.paths.clear();
     hostBirth.mode = undefined;
     hostBirth.relocated = false;
+    hostBirth.ctimeNs = 1n;
   }
 });
 
@@ -76,6 +78,10 @@ function observeHostBirthtime(mode: typeof hostBirth.mode, paths: string[]): voi
   vi.spyOn(fs, "statSync").mockImplementation((...args) => {
     const result = readStat(...args);
     if (result && args[1]?.bigint && hostBirth.paths.has(String(args[0]))) {
+      if (mode === "ctime") {
+        // Real filesystem ctime can share one tick across both sides of the mutation.
+        Object.defineProperty(result, "ctimeNs", { value: hostBirth.ctimeNs });
+      }
       Object.defineProperty(result, "birthtimeNs", {
         value:
           mode === "ctime" && "ctimeNs" in result
@@ -109,6 +115,7 @@ it("keeps healthy same-file admissions when birthtime falls back to ctime", asyn
     peer.exec("PRAGMA user_version = 0");
     peer.close();
     linkSync(pathname, alias);
+    hostBirth.ctimeNs += 1n;
     const after = statSync(pathname, { bigint: true });
     expect(after.ino).toBe(before.ino);
     expect(after.ctimeNs).not.toBe(before.ctimeNs);
@@ -143,6 +150,7 @@ it("permits a lazy native write after healthy peer changes when birthtime falls 
       peer.exec("PRAGMA wal_checkpoint(TRUNCATE)");
       peer.close();
       linkSync(pathname, alias);
+      hostBirth.ctimeNs += 1n;
       const after = statSync(pathname, { bigint: true });
       expect(after.ino).toBe(before.ino);
       expect(after.ctimeNs).not.toBe(before.ctimeNs);

@@ -1,11 +1,11 @@
-import { sql } from "kysely";
+import { expressionBuilder } from "kysely";
 import {
   executeSqliteQuerySync,
   getNodeSqliteKysely,
   sqliteStringSet,
 } from "../../infra/kysely-sync.js";
+import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db-contract.js";
 import type { DB } from "../../state/openclaw-agent-db.generated.js";
-import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import type { SessionEntry } from "./types.js";
 
 export const SESSION_ENTRY_SNAPSHOT_FIELDS = [
@@ -34,19 +34,17 @@ const snapshotColumns = [
 /** One statement owns hot and cold facts; JSON remains opaque to SQLite's depth limit. */
 export function sessionEntrySnapshotColumnsForKeys(keys?: readonly string[]) {
   const selectedKeys = keys === undefined ? undefined : sqliteStringSet(keys);
+  const eb = expressionBuilder<DB, "session_nodes">();
   return snapshotColumns.map(([field, alias]) => {
-    /* kysely-allow-raw: select the exact cold field within the entry statement snapshot. */
-    const snapshot = sql<string | null>`(
-      SELECT value_json FROM session_entry_snapshots
-      WHERE session_key = session_nodes.session_key AND field = ${field}
-    )`;
+    const snapshot = eb
+      .selectFrom("session_entry_snapshots")
+      .select("value_json")
+      .whereRef("session_entry_snapshots.session_key", "=", "session_nodes.session_key")
+      .where("field", "=", field);
     return (
       selectedKeys === undefined
         ? snapshot
-        : /* kysely-allow-raw: hydrate only explicitly selected full entries in the same statement. */
-          sql<
-            string | null
-          >`CASE WHEN session_nodes.session_key IN ${selectedKeys} THEN ${snapshot} END`
+        : eb.case().when("session_nodes.session_key", "in", selectedKeys).then(snapshot).end()
     ).as(alias);
   });
 }
@@ -115,8 +113,8 @@ export function writeSessionEntrySnapshots(
         .onConflict((conflict) =>
           conflict
             .columns(["session_key", "field"])
-            .doUpdateSet({ value_json: snapshot.valueJson })
-            .where("value_json", "!=", snapshot.valueJson),
+            .doUpdateSet((eb) => ({ value_json: eb.ref("excluded.value_json") }))
+            .whereRef("session_entry_snapshots.value_json", "!=", "excluded.value_json"),
         ),
     );
   }

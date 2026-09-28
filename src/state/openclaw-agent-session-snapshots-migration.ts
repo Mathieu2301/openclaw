@@ -1,35 +1,78 @@
 import type { DatabaseSync } from "node:sqlite";
 import { parseSqliteSessionEntryRecord } from "../config/sessions/session-entry-json.js";
-import { splitSessionEntrySnapshots } from "../config/sessions/session-entry-snapshots.js";
+import {
+  splitSessionEntrySnapshots,
+  type SessionEntrySnapshot,
+} from "../config/sessions/session-entry-snapshots.js";
+import {
+  executeSqliteQuerySync,
+  getNodeSqliteKysely,
+  prepareSqliteQuerySync,
+} from "../infra/kysely-sync.js";
 import { renewAgentDatabaseMaintenanceAuthorityIfPresent } from "./openclaw-agent-db-lease.js";
+import type { DB } from "./openclaw-agent-db.generated.js";
 import { OPENCLAW_AGENT_SCHEMA_SQL } from "./openclaw-agent-schema.js";
 import { sessionEntrySnapshotsSchemaSql } from "./openclaw-agent-session-snapshots-schema.js";
 
 /** The existing schema owner holds maintenance authority and the outer write transaction. */
 export function migrateSessionEntrySnapshotsInTransaction(database: DatabaseSync): void {
+  // sqlite-allow-raw -- Versioned schema DDL precedes the typed data migration.
   database.exec(
     "ALTER TABLE session_nodes ADD COLUMN snapshot_revision INTEGER NOT NULL DEFAULT 0",
   );
+  // sqlite-allow-raw -- Install the canonical snapshot table and its revision triggers.
   database.exec(sessionEntrySnapshotsSchemaSql(OPENCLAW_AGENT_SCHEMA_SQL));
-  const select = database.prepare(`
-    SELECT session_key, current_session_id, updated_at, entry_json
-    FROM session_nodes WHERE (? IS NULL OR session_key > ?) ORDER BY session_key LIMIT 64
-  `);
-  const insert = database.prepare(`
-    INSERT INTO session_entry_snapshots(session_key, field, value_json) VALUES (?, ?, ?)
-  `);
-  const update = database.prepare(`
-    UPDATE session_nodes SET entry_json = ? WHERE session_key = ?
-  `);
-  const markValid = database.prepare(
-    "UPDATE session_nodes SET entry_valid = 1 WHERE session_key = ?",
+  const db = getNodeSqliteKysely<DB>(database);
+  const select = db
+    .selectFrom("session_nodes")
+    .select(["session_key", "current_session_id", "updated_at", "entry_json"])
+    .orderBy("session_key")
+    .limit(64);
+  const selectAfter = prepareSqliteQuerySync<
+    string,
+    Pick<DB["session_nodes"], "session_key" | "current_session_id" | "updated_at" | "entry_json">
+  >(database, (parameter) =>
+    select.where(
+      "session_key",
+      ">",
+      parameter((key) => key),
+    ),
   );
-  for (const statement of [insert, update, markValid]) {
-    statement.setReadBigInts(true);
-  }
-  let after: string | null = null;
+  const insert = prepareSqliteQuerySync<SessionEntrySnapshot & { sessionKey: string }>(
+    database,
+    (parameter) =>
+      db.insertInto("session_entry_snapshots").values({
+        session_key: parameter((row) => row.sessionKey),
+        field: parameter((row) => row.field),
+        value_json: parameter((row) => row.valueJson),
+      }),
+  );
+  const update = prepareSqliteQuerySync<{ sessionKey: string; entryJson: string }>(
+    database,
+    (parameter) =>
+      db
+        .updateTable("session_nodes")
+        .set({ entry_json: parameter((row) => row.entryJson) })
+        .where(
+          "session_key",
+          "=",
+          parameter((row) => row.sessionKey),
+        ),
+  );
+  const markValid = prepareSqliteQuerySync<string>(database, (parameter) =>
+    db
+      .updateTable("session_nodes")
+      .set({ entry_valid: 1 })
+      .where(
+        "session_key",
+        "=",
+        parameter((key) => key),
+      ),
+  );
+  let after: string | undefined;
   while (true) {
-    const rows: ReturnType<typeof select.all> = select.all(after, after);
+    const { rows } =
+      after === undefined ? executeSqliteQuerySync(database, select) : selectAfter(after);
     if (rows.length === 0) {
       return;
     }
@@ -58,10 +101,10 @@ export function migrateSessionEntrySnapshotsInTransaction(database: DatabaseSync
         continue;
       }
       for (const snapshot of snapshots) {
-        insert.run(row.session_key, snapshot.field, snapshot.valueJson);
+        insert({ sessionKey: row.session_key, ...snapshot });
       }
-      update.run(entryJson, row.session_key);
-      markValid.run(row.session_key);
+      update({ entryJson, sessionKey: row.session_key });
+      markValid(row.session_key);
     }
   }
 }
