@@ -17,11 +17,9 @@ import {
   type EmbeddedAgentQueueMessageOutcome,
   formatEmbeddedAgentQueueFailureSummary,
   queueEmbeddedAgentMessageWithOutcomeAsync,
-  queueGuardedEmbeddedAgentMessageWithOutcomeAsync,
 } from "../embedded-agent-runner/runs.js";
-import { jsonResult, ToolAuthorizationError } from "./common.js";
+import { jsonResult } from "./common.js";
 import type { AgentToolGatewayRequestCaller } from "./in-process-gateway.js";
-import { prepareSessionToolControlTarget } from "./sessions-tool-control.js";
 
 function isRunScopedAgentSessionKey(sessionKey: string): boolean {
   const parsed = parseAgentSessionKey(normalizeOptionalString(sessionKey));
@@ -61,17 +59,6 @@ function shouldFallbackCronRunScopedActiveDelivery(
   );
 }
 
-/** Exact-incarnation sends cannot fall back to a different durable Cron parent. */
-export function sessionsSendQueueOptions(timeoutSeconds: number, expectedSessionId?: string) {
-  return timeoutSeconds === 0
-    ? {
-        allowActiveRunQueueDelivery: true,
-        allowActiveRunQueueFallback: !expectedSessionId,
-        expectedSessionId,
-      }
-    : {};
-}
-
 export async function startSessionsSendAgentRun(params: {
   cfg: OpenClawConfig;
   callGateway: AgentToolGatewayRequestCaller;
@@ -90,7 +77,6 @@ export async function startSessionsSendAgentRun(params: {
   expectedSessionId?: string;
   sourceOrigin?: DeliveryContext;
   mode?: "steer" | "followup";
-  restrictSessionControls?: boolean;
 }): Promise<
   | {
       ok: true;
@@ -100,7 +86,6 @@ export async function startSessionsSendAgentRun(params: {
     }
   | { ok: false; result: ReturnType<typeof jsonResult> }
 > {
-  let control: Awaited<ReturnType<typeof prepareSessionToolControlTarget>> | undefined;
   try {
     let fallbackSessionKey: string | undefined;
     const activeRunSessionId =
@@ -124,28 +109,6 @@ export async function startSessionsSendAgentRun(params: {
     }
     const { inputProvenance, message: messageText, sourceReplyDeliveryMode } = params.sendParams;
     if (activeRunSessionId && messageText) {
-      if (params.mode === "steer" && params.restrictSessionControls) {
-        control = await prepareSessionToolControlTarget({
-          cfg: params.cfg,
-          agentId: params.sessionStoreTarget.agentId,
-          key: params.sessionStoreTarget.canonicalKey,
-          expectedSessionId: activeRunSessionId,
-          restricted: true,
-        });
-      }
-      const controlTarget = control;
-      const queueMessage = (options: EmbeddedAgentQueueMessageOptions) =>
-        controlTarget
-          ? queueGuardedEmbeddedAgentMessageWithOutcomeAsync(
-              activeRunSessionId,
-              messageText,
-              options,
-              () => {
-                controlTarget.assertCurrent();
-                return true;
-              },
-            )
-          : queueEmbeddedAgentMessageWithOutcomeAsync(activeRunSessionId, messageText, options);
       const queueOptions: EmbeddedAgentQueueMessageOptions = {
         steeringMode: "all",
         debounceMs: 0,
@@ -172,30 +135,21 @@ export async function startSessionsSendAgentRun(params: {
           },
         }),
       };
-      let queueOutcome = await queueMessage(queueOptions);
-      if (
-        !control &&
-        !queueOutcome.queued &&
-        queueOutcome.reason === "transcript_commit_wait_unsupported"
-      ) {
+      let queueOutcome = await queueEmbeddedAgentMessageWithOutcomeAsync(
+        activeRunSessionId,
+        messageText,
+        queueOptions,
+      );
+      if (!queueOutcome.queued && queueOutcome.reason === "transcript_commit_wait_unsupported") {
         const bestEffortQueueOptions = { ...queueOptions };
         delete bestEffortQueueOptions.waitForTranscriptCommit;
-        queueOutcome = await queueMessage(bestEffortQueueOptions);
+        queueOutcome = await queueEmbeddedAgentMessageWithOutcomeAsync(
+          activeRunSessionId,
+          messageText,
+          bestEffortQueueOptions,
+        );
       }
       if (queueOutcome.queued) {
-        if (control && queueOutcome.transcriptCommit === "unconfirmed") {
-          return {
-            ok: false,
-            result: jsonResult({
-              runId: params.runId,
-              status: "error",
-              sentBeforeError: true,
-              sessionKey: params.sessionKey,
-              error:
-                "Steering was accepted without confirmation; inspect this run before retrying.",
-            }),
-          };
-        }
         return { ok: true, runId: params.runId, targetDisposition: "steered" };
       }
       fallbackSessionKey = resolveCronRunScopedFallbackSessionKey(params.sessionKey);
@@ -261,12 +215,10 @@ export async function startSessionsSendAgentRun(params: {
       ok: false,
       result: jsonResult({
         runId: params.runId,
-        status: err instanceof ToolAuthorizationError ? "forbidden" : "error",
+        status: "error",
         error: messageText,
         sessionKey: params.sessionKey,
       }),
     };
-  } finally {
-    control?.release();
   }
 }

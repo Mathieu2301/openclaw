@@ -80,7 +80,6 @@ import { buildAgentToAgentMessageContext } from "./sessions-send-helpers.js";
 import { startSessionsSendReplyFlow } from "./sessions-send-reply-flow.js";
 import { captureSessionsSendResumeCaller, resumeSessionsSendTask } from "./sessions-send-resume.js";
 import { normalizeSessionsSendArguments } from "./sessions-send-tool.arguments.js";
-import { sessionsSendQueueOptions } from "./sessions-send-tool.delivery.js";
 import { SessionsSendToolSchema, SessionsSendOutputSchema } from "./sessions-send-tool.schema.js";
 import type { SessionsSendToolOptions } from "./sessions-send-tool.types.js";
 
@@ -857,13 +856,21 @@ export function createSessionsSendTool(opts?: SessionsSendToolOptions): AnyAgent
               callGateway: gatewayCall,
               runId,
               mode,
-              restrictSessionControls: opts?.restrictSessionControls,
               sendParams,
               sourceOrigin: sameSession ? requesterOrigin : undefined,
               sessionKey: mode ? resolvedKey : displayKey,
               sessionStoreTarget: targetSession,
               deliveryTimeoutMs: announceTimeoutMs,
-              ...sessionsSendQueueOptions(timeoutSeconds, expectedSessionId),
+              ...(timeoutSeconds === 0
+                ? {
+                    allowActiveRunQueueDelivery: true,
+                    // An exact-incarnation grant authorizes only this target. Never
+                    // reroute a worker-owned send to a durable Cron parent outside
+                    // the scoped lifecycle admission or replace its stable key.
+                    allowActiveRunQueueFallback: !expectedSessionId,
+                    expectedSessionId,
+                  }
+                : {}),
             },
             replyContext,
           );

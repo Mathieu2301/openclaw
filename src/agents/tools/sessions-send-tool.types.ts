@@ -7,8 +7,6 @@ export type SessionsSendToolOptions = {
   agentSessionKey?: string;
   agentSessionId?: string;
   agentChannel?: string;
-  /** Non-owner tool surface; ordinary session controls require the requesting operator. */
-  restrictSessionControls?: boolean;
   requesterOrigin?: DeliveryContext;
   sandboxed?: boolean;
   config?: OpenClawConfig;

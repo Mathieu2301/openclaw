@@ -263,7 +263,7 @@ Subagent coordination does not use this loop. A child report goes to its recipie
 
 Isolated scheduled jobs receive no automatic reply turns, including failure notifications. Their peer-target announcements remain unchanged. If such a scheduled job's wait ends before a native child replies, that reply follows the target's existing announcement path without a reciprocal reply exchange.
 
-These reply deliveries apply to new or follow-up turns. `mode: "steer"` returns admission only for guidance added to an active run and leaves completion with that run's existing owner. Non-admin active-run steering requires `operator.write` and the same creator or assigned-human-owner relationship as stop/archive, in addition to existing session visibility checks. `mode: "notify"` queues context without starting a turn. Registered task completion and paused-task resume keep their existing completion owner and do not add a second reply delivery.
+These reply deliveries apply to new or follow-up turns. `mode: "steer"` returns admission only for guidance added to an active run and leaves completion with that run's existing owner. It uses the existing `sessions_send` access checks. `mode: "notify"` queues context without starting a turn. Registered task completion and paused-task resume keep their existing completion owner and do not add a second reply delivery.
 
 Child coordination stays in agent context and raw transcripts. The receiving chat hides child reports and automatic coordination replies, while normal task-completion summaries and direct human answers remain visible. Historical messages without source provenance cannot be classified as child traffic.
 
