@@ -12,12 +12,13 @@ import {
   withUpdateCommandExecutor,
 } from "../cli/update-cli/update-command-executor.js";
 import { resolveServiceManagerEnv } from "../daemon/service-process-env.js";
-import { executeSqliteQuerySync } from "./kysely-sync.js";
 import * as nodeSqlite from "./node-sqlite.js";
 import * as tempRoot from "./tmp-openclaw-dir.js";
 import {
   createManagedHandoffLeaseDatabase,
-  leaseQueries,
+  deleteManagedHandoffLeaseRow,
+  readManagedHandoffChildLeases,
+  updateManagedHandoffLeaseRow,
 } from "./update-managed-service-handoff-database.js";
 import { createManagedHandoffLeaseStore } from "./update-managed-service-handoff-lease.js";
 
@@ -351,39 +352,19 @@ describe.skipIf(process.platform === "win32")("existing update authority", () =>
             expect(probeWriterAdmission()).toEqual({ acquired: false, errcode: 5 });
             // A second connection alone is safe. A raw open/read/close during
             // these owner reads must not discard the first connection's POSIX lock.
-            const prefix = `${root}/.openclaw-update-child-`;
-            const children = withDatabase(
-              false,
-              (reader) =>
-                executeSqliteQuerySync(
-                  reader,
-                  leaseQueries(reader)
-                    .selectFrom("managed_update_handoffs")
-                    .select("owner")
-                    .where("install_root", ">=", prefix)
-                    .where("install_root", "<", prefix + "\uffff"),
-                ).rows,
+            const children = withDatabase(false, (reader) =>
+              readManagedHandoffChildLeases(reader, root),
             );
             expect(children).toEqual([]);
             expect(store.current(admitted.lease)).toBe(true);
             expect(probeWriterAdmission()).toEqual({ acquired: false, errcode: 5 });
             if (mutation === "delete") {
-              executeSqliteQuerySync(
-                db,
-                leaseQueries(db)
-                  .deleteFrom("managed_update_handoffs")
-                  .where("install_root", "=", root)
-                  .where("owner", "=", admitted.lease.owner),
-              );
+              deleteManagedHandoffLeaseRow(db, admitted.lease);
             } else {
-              executeSqliteQuerySync(
-                db,
-                leaseQueries(db)
-                  .updateTable("managed_update_handoffs")
-                  .set({ updated_at: admitted.lease.updatedAt + 1 })
-                  .where("install_root", "=", root)
-                  .where("owner", "=", admitted.lease.owner),
-              );
+              updateManagedHandoffLeaseRow(db, admitted.lease, {
+                payload_json: admitted.lease.payload,
+                updated_at: admitted.lease.updatedAt + 1,
+              });
             }
             expect(db.isTransaction).toBe(true);
             expect(probeWriterAdmission()).toEqual({ acquired: false, errcode: 5 });

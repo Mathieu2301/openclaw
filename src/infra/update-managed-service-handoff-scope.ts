@@ -67,5 +67,35 @@ export function createManagedHandoffScopeReader(serviceManagerEnv: NodeJS.Proces
           (life.placement.kind === "pending" || scope.InvocationID === life.placement.invocation))),
     );
   }
-  return { control, properties, nativeScope, isInNativeScope, nativeClosed };
+  function stopNative(
+    life: HandoffNativeLifetime,
+    ownPlacement: boolean,
+    isCurrent: (scope: Record<string, string> | null) => boolean,
+  ) {
+    if (life.placement.kind !== "attached" && !ownPlacement) {
+      return false;
+    }
+    const scope = nativeScope(life);
+    if (!isCurrent(scope)) {
+      return false;
+    }
+    if (nativeClosed(life, scope)) {
+      return true;
+    }
+    if (
+      !scope ||
+      scope.Id !== life.scope ||
+      (life.placement.kind === "attached" && scope.InvocationID !== life.placement.invocation) ||
+      !isCurrent(scope)
+    ) {
+      return false;
+    }
+    const result = control(
+      "systemctl",
+      ["--user", ...(ownPlacement ? ["--no-block"] : []), "stop", life.scope],
+      30000,
+    );
+    return !result.error && result.status === 0 && (ownPlacement || nativeClosed(life));
+  }
+  return { control, properties, nativeScope, isInNativeScope, nativeClosed, stopNative };
 }

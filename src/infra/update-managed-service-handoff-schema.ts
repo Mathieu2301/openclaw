@@ -3,6 +3,15 @@ import { z } from "zod";
 import { safeParseJsonWithSchema } from "../utils/zod-parse.js";
 
 const text = z.string().min(1).max(4096);
+export const triageFailureSchema = z.strictObject({
+  kind: z.enum(["update", "gateway-startup"]),
+  phase: z.string().max(120),
+  error: z.string().max(800),
+  installationRoot: text.optional(),
+  expectedVersion: z.string().max(100).optional(),
+  gateway: z.enum(["verify-running", "preserve"]),
+});
+
 const nativeProcessIdentityShape = {
   pid: z.number().int().positive(),
   startIdentity: text.max(128),

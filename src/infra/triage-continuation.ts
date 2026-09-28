@@ -25,9 +25,9 @@ import {
 } from "./update-control-plane-sentinel.js";
 import {
   createManagedHandoffLeaseStore,
-  triageFailureSchema as failureSchema,
   type ManagedHandoffLease,
 } from "./update-managed-service-handoff-lease.js";
+import { triageFailureSchema as failureSchema } from "./update-managed-service-handoff-schema.js";
 import {
   createManagedUpdateRequesterAuthority,
   UpdateRequesterRevokedError,

@@ -7,13 +7,13 @@ import { z } from "zod";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as pidAlive from "../shared/pid-alive.js";
 import { withMockedPlatform } from "../test-utils/vitest-spies.js";
-import { executeSqliteQuerySync } from "./kysely-sync.js";
 import { nativeBoundaryTestEntrypoints } from "./native-boundary-runtime.test-support.js";
 import * as nodeSqlite from "./node-sqlite.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "./runtime-worker-url.js";
 import {
   createManagedHandoffLeaseDatabase,
-  leaseQueries,
+  insertManagedHandoffLeaseRow,
+  updateManagedHandoffLeaseRow,
 } from "./update-managed-service-handoff-database.js";
 import { createManagedHandoffLeaseStore } from "./update-managed-service-handoff-lease.js";
 import { parseManagedHandoffLeasePayload } from "./update-managed-service-handoff-schema.js";
@@ -163,22 +163,17 @@ describe("managed handoff Windows process identities", () => {
       store.processIdentity(42, ["C:\\node.exe", "C:\\openclaw\\entry.js"]),
     );
     createManagedHandoffLeaseDatabase(databasePath)(true, (db) =>
-      executeSqliteQuerySync(
-        db,
-        leaseQueries(db)
-          .insertInto("managed_update_handoffs")
-          .values({
-            install_root: root,
-            owner: "live-original",
-            payload_json: JSON.stringify({
-              version: 2,
-              helper: identity,
-              executor: identity,
-              action: { kind: "update" },
-            }),
-            updated_at: Date.now(),
-          }),
-      ),
+      insertManagedHandoffLeaseRow(db, {
+        install_root: root,
+        owner: "live-original",
+        payload_json: JSON.stringify({
+          version: 2,
+          helper: identity,
+          executor: identity,
+          action: { kind: "update" },
+        }),
+        updated_at: Date.now(),
+      }),
     );
     withMockedPlatform("win32", () => {
       expect(store.isProcessIdentityCurrent(identity, true)).toBe(false);
@@ -358,17 +353,12 @@ describe.skipIf(process.platform === "win32")("managed handoff Darwin legacy val
     const executor = { pid: executorPid, startIdentity };
     const database = createManagedHandoffLeaseDatabase(databasePath);
     database(true, (db) =>
-      executeSqliteQuerySync(
-        db,
-        leaseQueries(db)
-          .insertInto("managed_update_handoffs")
-          .values({
-            install_root: root,
-            owner: "original-v1-helper",
-            payload_json: JSON.stringify({ version: 1, pid: helperPid, startIdentity }),
-            updated_at: 100,
-          }),
-      ),
+      insertManagedHandoffLeaseRow(db, {
+        install_root: root,
+        owner: "original-v1-helper",
+        payload_json: JSON.stringify({ version: 1, pid: helperPid, startIdentity }),
+        updated_at: 100,
+      }),
     );
     const parent = store.readLegacyParent(root, executor);
     if (!parent) {
@@ -432,13 +422,11 @@ describe.skipIf(process.platform === "win32")("managed handoff Darwin legacy val
       storedParent: () => store.readLegacyParent(root, executor),
       replaceRow() {
         database(true, (db) =>
-          executeSqliteQuerySync(
-            db,
-            leaseQueries(db)
-              .updateTable("managed_update_handoffs")
-              .set({ owner: "replacement" })
-              .where("install_root", "=", root),
-          ),
+          updateManagedHandoffLeaseRow(db, parent, {
+            owner: "replacement",
+            payload_json: parent.payload,
+            updated_at: parent.updatedAt,
+          }),
         );
       },
     };

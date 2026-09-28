@@ -12,6 +12,8 @@ import {
 import { compareSemverStrings, resolveNpmChannelTag } from "../../infra/update-check.js";
 import { UPDATE_RUN_ID_ENV } from "../../infra/update-control-plane-sentinel.js";
 import { readBuiltGatewayBuildId } from "../../infra/update-git-runtime.js";
+import { createManagedHandoffLeaseStore } from "../../infra/update-managed-service-handoff-lease.js";
+import { POST_CORE_UPDATE_ENV } from "../../infra/update-post-core-context.js";
 import {
   inspectUpdateRepairDriverAdmission,
   isFreshUnacknowledgedAbandonedUpdateRun,
@@ -40,6 +42,7 @@ import {
   resolveGatewayRestartProbeContext,
   waitForGatewayHttpReadiness,
 } from "../daemon-cli/restart-health-probe.js";
+import { hasCliProcessScope } from "../runtime-cleanup-scope.js";
 import {
   parseUpdateTimeoutMs,
   resolveUpdateRoot,
@@ -98,6 +101,18 @@ export async function updateRepairCommand(opts: UpdateFinalizeOptions): Promise<
   if (admission.kind === "conflict") {
     throw new Error(admission.message);
   }
+  using handoff =
+    hasCliProcessScope() &&
+    !inheritedRunId &&
+    !env.OPENCLAW_UPDATE_RUN_HANDOFF &&
+    !env[POST_CORE_UPDATE_ENV] &&
+    (opts.channel === undefined || normalizeUpdateChannel(opts.channel))
+      ? await createManagedHandoffLeaseStore().prepareRepair(
+          await resolveUpdateRoot(),
+          env,
+          timeoutMs,
+        )
+      : null;
   // Capture Doctor-visible history before finalization admits its own newer run.
   // Terminal age limits the shortcut below, not successful repair acknowledgment.
   const recentRuns = listUpdateRuns({ limit: 100 }, options);
@@ -117,6 +132,7 @@ export async function updateRepairCommand(opts: UpdateFinalizeOptions): Promise<
   }
   const lastRun = recentRuns[0];
   if (
+    !handoff &&
     !activeRuns.length &&
     !historicalRuns.length &&
     opts.channel === undefined &&
@@ -168,6 +184,11 @@ export async function updateRepairCommand(opts: UpdateFinalizeOptions): Promise<
       [...recoveryRuns, ...historicalRuns, ...history.postCoreRuns].map((run) => run.runId),
     ),
   ];
+
+  if (handoff) {
+    await updateFinalizeCommand(opts, recoveryRunIds, handoff);
+    return;
+  }
 
   if (
     opts.channel !== undefined ||

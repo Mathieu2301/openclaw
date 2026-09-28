@@ -3,13 +3,18 @@ import path from "node:path";
 import type { DatabaseSync as HandoffDatabase } from "node:sqlite";
 import { sameFileIdentity } from "@openclaw/fs-safe/advanced";
 import { sql } from "kysely";
+import { z } from "zod";
+import { ensureColumn } from "../state/openclaw-state-db-schema-helpers.js";
+import { safeParseJsonWithSchema } from "../utils/zod-parse.js";
 import { requireDirectorySync, syncDirectorySync } from "./directory-durability.js";
 import { hasErrnoCode } from "./errno.js";
 import { acquireFileLockSyncWithRetry } from "./file-lock-sync.js";
 import {
   executeSqliteQuerySync,
+  executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
   prepareSqliteQuerySync,
+  prepareSqliteQueryTakeFirstSync,
 } from "./kysely-sync.js";
 import { openNodeSqliteDatabase, resolveExistingSqliteFileUri } from "./node-sqlite.js";
 import { setSqliteBusyTimeout } from "./sqlite-busy-timeout.js";
@@ -22,13 +27,159 @@ import {
   runSqliteImmediateTransactionSync,
   type SqliteTransactionOptions,
 } from "./sqlite-transaction.js";
+import {
+  isRetiredManagedHandoffLeasePayload,
+  parseManagedHandoffLeasePayload,
+  type ManagedHandoffLeasePayload,
+} from "./update-managed-service-handoff-schema.js";
+import {
+  hasManagedHandoffSchemaObject,
+  isManagedHandoffSchemaEmpty,
+} from "./update-managed-service-handoff-source-inspection.js";
 import { quarantineManagedHandoffStore } from "./update-managed-service-handoff-store-repair.js";
 import { createPrivateWindowsFile } from "./windows-private-directory.js";
 
 export type LeaseRow = { owner: string; payload_json: string; updated_at: number };
-export type LeaseTable = LeaseRow & { install_root: string };
-export const leaseQueries = (db: HandoffDatabase) =>
+export type LeaseTable = LeaseRow & { install_root: string; recovery_json?: string | null };
+const leaseQueries = (db: HandoffDatabase) =>
   getNodeSqliteKysely<{ managed_update_handoffs: LeaseTable }>(db);
+
+const text = z.string().min(1).max(4096);
+type LeaseIdentity = { key: string; owner: string; payload: string; updatedAt: number };
+export type ManagedHandoffLease = ManagedHandoffLeasePayload & LeaseIdentity;
+const repairMetadataSchema = z.strictObject({
+  version: z.literal(3),
+  binding: z.string(),
+  source: z.strictObject({
+    owner: text,
+    payload_json: z.string(),
+    updated_at: z.number().int().nonnegative(),
+  }),
+  facts: z.strictObject({
+    runIds: z.array(text).min(1),
+    artifactPaths: z.array(text.refine(path.isAbsolute)),
+    timeoutMs: z.number().int().positive().safe().nullable(),
+  }),
+});
+export type ManagedHandoffRepairFacts = z.infer<typeof repairMetadataSchema>["facts"];
+export const managedHandoffLeaseBinding = (lease: ManagedHandoffLease) =>
+  JSON.stringify([lease.owner, lease.payload, lease.updatedAt]);
+
+const recoveryColumns = new WeakSet<HandoffDatabase>();
+
+export function readManagedHandoffRepairMetadata(
+  db: HandoffDatabase,
+  lease: ManagedHandoffLease,
+  transact: ExistingSqliteTransaction,
+) {
+  if (!recoveryColumns.has(db)) {
+    if (db.isTransaction) {
+      throw new Error("Handoff recovery schema requires a separate writer admission.");
+    }
+    // Commit first-use DDL before caching its admitted fact or reading metadata.
+    transact(() => ensureColumn(db, "managed_update_handoffs", "recovery_json TEXT"));
+    recoveryColumns.add(db);
+  }
+  const retained = executeSqliteQueryTakeFirstSync(
+    db,
+    leaseQueries(db)
+      .selectFrom("managed_update_handoffs")
+      .select("recovery_json")
+      .where("install_root", "=", lease.key),
+  )?.recovery_json;
+  const parsed = retained ? safeParseJsonWithSchema(repairMetadataSchema, retained) : null;
+  if (retained !== null && retained !== undefined && !parsed) {
+    throw new Error("Handoff recovery metadata is unreadable; preserve its retained artifacts.");
+  }
+  return parsed?.binding === managedHandoffLeaseBinding(lease) ? parsed : null;
+}
+
+export function parseManagedHandoffLeaseRow(root: string, value: LeaseRow): ManagedHandoffLease {
+  const payload = parseManagedHandoffLeasePayload(value.payload_json);
+  if (!payload || !text.safeParse(value.owner).success) {
+    throw new Error(
+      "existing managed handoff lease is incompatible; retain diagnostics and run openclaw triage manually",
+    );
+  }
+  return {
+    key: root,
+    owner: value.owner,
+    payload: value.payload_json,
+    updatedAt: value.updated_at,
+    ...payload,
+  };
+}
+
+const rowReaders = new WeakMap<HandoffDatabase, (root: string) => LeaseRow | undefined>();
+export function readManagedHandoffLeaseRow(db: HandoffDatabase, root: string) {
+  let readRow = rowReaders.get(db);
+  if (!readRow) {
+    readRow = prepareSqliteQueryTakeFirstSync<string, LeaseRow>(db, (parameter) =>
+      leaseQueries(db)
+        .selectFrom("managed_update_handoffs")
+        .select(["owner", "payload_json", "updated_at"])
+        .where(
+          "install_root",
+          "=",
+          parameter((key) => key),
+        ),
+    );
+    rowReaders.set(db, readRow);
+  }
+  return readRow(root);
+}
+
+export function readManagedHandoffChildLeases(
+  db: HandoffDatabase,
+  root: string,
+): ManagedHandoffLease[] {
+  const prefix = `${root}/.openclaw-update-child-`;
+  return executeSqliteQuerySync(
+    db,
+    leaseQueries(db)
+      .selectFrom("managed_update_handoffs")
+      .select(["install_root", "owner", "payload_json", "updated_at"])
+      .where("install_root", ">=", prefix)
+      .where("install_root", "<", prefix + "\uffff"),
+  ).rows.map((entry) => parseManagedHandoffLeaseRow(entry.install_root, entry));
+}
+
+export function insertManagedHandoffLeaseRow(db: HandoffDatabase, value: LeaseTable): void {
+  executeSqliteQuerySync(db, leaseQueries(db).insertInto("managed_update_handoffs").values(value));
+}
+
+export function deleteManagedHandoffLeaseRow(db: HandoffDatabase, lease: LeaseIdentity) {
+  return (
+    executeSqliteQuerySync(
+      db,
+      leaseQueries(db)
+        .deleteFrom("managed_update_handoffs")
+        .where("install_root", "=", lease.key)
+        .where("owner", "=", lease.owner)
+        .where("payload_json", "=", lease.payload)
+        .where("updated_at", "=", lease.updatedAt),
+    ).numAffectedRows === 1n
+  );
+}
+export function updateManagedHandoffLeaseRow(
+  db: HandoffDatabase,
+  lease: LeaseIdentity,
+  values: Pick<LeaseTable, "payload_json" | "updated_at"> &
+    Partial<Pick<LeaseTable, "install_root" | "owner" | "recovery_json">>,
+) {
+  return (
+    executeSqliteQuerySync(
+      db,
+      leaseQueries(db)
+        .updateTable("managed_update_handoffs")
+        .set(values)
+        .where("install_root", "=", lease.key)
+        .where("owner", "=", lease.owner)
+        .where("payload_json", "=", lease.payload)
+        .where("updated_at", "=", lease.updatedAt),
+    ).numAffectedRows === 1n
+  );
+}
 
 function initializeLeaseSchema(db: HandoffDatabase): void {
   executeSqliteQuerySync(
@@ -40,6 +191,7 @@ function initializeLeaseSchema(db: HandoffDatabase): void {
       .addColumn("owner", "text", (column) => column.notNull())
       .addColumn("payload_json", "text", (column) => column.notNull())
       .addColumn("updated_at", "integer", (column) => column.notNull())
+      .addColumn("recovery_json", "text")
       .modifyEnd(sql`STRICT`),
   );
 }
@@ -367,6 +519,45 @@ export function createManagedHandoffLeaseDatabase(
     }
   }
   return Object.assign(withDatabase, {
+    readRow(root: string): LeaseRow | undefined {
+      if (!existingIdentity && !fs.existsSync(databasePath)) {
+        return undefined;
+      }
+      return withDatabase(false, (db) =>
+        !existingIdentity && isManagedHandoffSchemaEmpty(db)
+          ? undefined
+          : readManagedHandoffLeaseRow(db, root),
+      );
+    },
+    readRetainedRows(): LeaseTable[] {
+      try {
+        fs.lstatSync(databasePath);
+      } catch (error) {
+        if (hasErrnoCode(error, "ENOENT")) {
+          return [];
+        }
+        throw error;
+      }
+      return withDatabase(false, (db) => {
+        // Only ordinary inspection may accept an uninitialized store.
+        if (!existingIdentity && !hasManagedHandoffSchemaObject(db)) {
+          return [];
+        }
+        return executeSqliteQuerySync(
+          db,
+          leaseQueries(db)
+            .selectFrom("managed_update_handoffs")
+            .select(["install_root", "owner", "payload_json", "updated_at"]),
+        ).rows.flatMap((entry) =>
+          // A retired record decodes exactly, so unlike unreadable data it proves
+          // the row predates native custody and cannot borrow any source. A record
+          // this build cannot decode may still name a source it holds, so it is
+          // never discarded here: releasing that source is the hazard this refusal
+          // exists for. Store-level damage recovers in the database owner instead.
+          isRetiredManagedHandoffLeasePayload(entry.payload_json) ? [] : [entry],
+        );
+      });
+    },
     retainReadConnection(this: void) {
       if (!existingOptions || readExisting) {
         throw new Error("Existing SQLite reader requires an unretained identity-bound store.");
