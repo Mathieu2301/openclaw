@@ -435,8 +435,7 @@ vi.mock("../../plugins/hook-runner-global.js", () => ({
   getGlobalPluginRegistry: () => hookMocks.registry,
   resetGlobalHookRunner: vi.fn(),
 }));
-vi.mock("../../acp/runtime/session-meta.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../acp/runtime/session-meta.js")>()),
+vi.mock("../../acp/runtime/session-meta.js", () => ({
   listAcpSessionEntries: acpMocks.listAcpSessionEntries,
   readAcpSessionEntry: acpMocks.readAcpSessionEntry,
   readAcpSessionEntryAsync: async (params: {
@@ -450,7 +449,11 @@ vi.mock("../../acp/runtime/session-meta.js", async (importOriginal) => ({
     agentId?: string;
     cfg?: OpenClawConfig;
   }) => acpMocks.readAcpSessionMeta(params),
+  prepareAcpSessionControlRead:
+    vi.fn<typeof import("../../acp/runtime/session-meta.js").prepareAcpSessionControlRead>(),
   upsertAcpSessionMeta: acpMocks.upsertAcpSessionMeta,
+  upsertAcpSessionMetaForControl:
+    vi.fn<typeof import("../../acp/runtime/session-meta.js").upsertAcpSessionMetaForControl>(),
 }));
 vi.mock("../../acp/runtime/registry.js", () => ({
   getAcpRuntimeBackend: acpMocks.getAcpRuntimeBackend,
