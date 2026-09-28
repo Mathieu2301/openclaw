@@ -119,6 +119,7 @@ import { abortPendingChannelReloads } from "./server-reload-generation.js";
 import {
   captureConfigWriteListener,
   createConfigWriteListenerRef,
+  createManagedReloadAuthFixture,
   createManagedRestartSequenceConfigs,
   createConfigWriteNotification,
   createCronRestartPlan,
@@ -864,24 +865,7 @@ async function runManagedOwnershipScenario(params: {
   /** Makes secrets activation resolve to a different object than it received. */
   resolveToDistinctConfig?: boolean;
 }) {
-  const providerConfig = (apiKey: string | { source: "env"; provider: string; id: string }) => ({
-    models: {
-      providers: { fixture: { baseUrl: "https://provider.example.test/v1", apiKey, models: [] } },
-    },
-  });
-  const providerSource = params.resolvedProviderRotation
-    ? {
-        ...providerConfig({ source: "env", provider: "default", id: "FIXTURE_PROVIDER_KEY" }),
-        agents: { entries: { main: { model: "fixture/first" }, other: {} } },
-        channels: { slack: { streaming: { mode: "off" as const } } },
-      }
-    : {};
-  const auth = params.sharedAuthRotation
-    ? {
-        mode: "token" as const,
-        token: { source: "file" as const, provider: "default", id: "/token" },
-      }
-    : undefined;
+  const { auth, providerConfig, providerSource } = createManagedReloadAuthFixture(params);
   const initialConfig = {
     ...providerSource,
     gateway: {
@@ -1625,9 +1609,9 @@ describe("managed reload transaction ownership", () => {
         "prepared model runtime owner is stale before config publication",
         { waitForReplacement: true },
       );
-      expect(
-        hoisted.markPreparedModelRuntimeSnapshotsStale.mock.invocationCallOrder[0],
-      ).toBeLessThan(result.commitRuntimePolicy.mock.invocationCallOrder[0]);
+      expect(hoisted.markPreparedModelRuntimeSnapshotsStale).toHaveBeenCalledBefore(
+        result.commitRuntimePolicy,
+      );
       expect(hoisted.advancePreparedModelRuntimeConfig).not.toHaveBeenCalled();
       expect(hoisted.refreshPreparedModelRuntimeSnapshots).toHaveBeenCalledOnce();
       const [config, options] = hoisted.refreshPreparedModelRuntimeSnapshots.mock.calls[0]!;
@@ -1974,7 +1958,7 @@ describe("gateway hot reload model state", () => {
     const logReload = { info: vi.fn(), warn: vi.fn() };
     const { applyHotReload } = createReloadHandlersForTest(logReload);
     const nextConfig = {} as OpenClawConfig;
-    hoisted.runtimeConfig.value = nextConfig;
+    setRuntimeConfigSnapshot(nextConfig, nextConfig);
 
     await applyHotReload(
       buildGatewayReloadPlan(["agents.entries.Alpha.model", "meta.lastTouchedAt"]),
@@ -2010,7 +1994,7 @@ describe("gateway hot reload model state", () => {
           },
         },
       } satisfies OpenClawConfig;
-
+      setRuntimeConfigSnapshot({ agents: { defaults: { compaction: {} } } });
       await applyHotReload(buildGatewayReloadPlan([changedPath]), nextConfig);
 
       if (modelChanged) {

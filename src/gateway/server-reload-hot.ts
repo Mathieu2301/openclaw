@@ -96,11 +96,11 @@ export function createGatewayReloadHandlers(params: GatewayReloadHandlerParams) 
     const state = params.getState();
     const nextState = { ...state };
     const candidateEnv = publication?.runtimeEnv ?? process.env;
-    const previousConfig = getRuntimeConfig();
-    const refreshModelRuntime = doesReloadAffectProviderAuth(plan, previousConfig, nextConfig);
+    const committedConfig = getRuntimeConfig();
+    const refreshModelRuntime = doesReloadAffectProviderAuth(plan, committedConfig, nextConfig);
     const modelRuntimeAgentIds = mrReload.resolveReloadAgentIds([
       ...plan.changedPaths,
-      ...diffConfigPaths(previousConfig, nextConfig),
+      ...diffConfigPaths(committedConfig, nextConfig),
     ]);
     const modelRuntimeRefreshScope = modelRuntimeAgentIds ? { agentIds: modelRuntimeAgentIds } : {};
 
