@@ -126,23 +126,20 @@ export function createProfileSelectionOps({
       return resolved.ok || resolved.reason === "ambiguous";
     };
 
-    const tabs1 = await readTabs();
+    // A named remote target gets a short first attempt and a full-budget
+    // recovery read. Slow healthy enumeration can still succeed, while an
+    // unavailable connection consumes at most one full action timeout.
+    const firstListOptions =
+      capabilities.isRemote && targetId !== undefined
+        ? {
+            ...options,
+            timeoutMs: Math.min(options?.timeoutMs ?? Infinity, CDP_WS_HANDSHAKE_TIMEOUT_MS),
+          }
+        : options;
+    const tabs1 = await readTabs(firstListOptions);
     await openWhenConfirmedEmpty(tabs1);
 
-    // Preserve one recovery read after a transient remote failure, but do not
-    // spend a second full action timeout when the remote browser is unavailable.
-    const failedRemoteTargetList =
-      capabilities.isRemote &&
-      targetId !== undefined &&
-      !sawSuccessfulList &&
-      lastListError !== undefined;
-    const retryOptions = failedRemoteTargetList
-      ? {
-          ...options,
-          timeoutMs: Math.min(options?.timeoutMs ?? Infinity, CDP_WS_HANDSHAKE_TIMEOUT_MS),
-        }
-      : options;
-    let listedTabs = await readTabs(retryOptions);
+    let listedTabs = await readTabs();
     await openWhenConfirmedEmpty(listedTabs);
     let unfilteredTabs = mergeOpenedTabSnapshot(listedTabs, openedTab);
     let candidates = candidateTabs(unfilteredTabs);
