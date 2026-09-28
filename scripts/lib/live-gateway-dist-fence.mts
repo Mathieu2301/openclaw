@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { ManagedGatewayBinding } from "../../src/daemon/managed-gateway-bindings.ts";
 import type { GatewayServiceEnv, GatewayServiceState } from "../../src/daemon/service-types.ts";
+import { hasErrnoCode } from "../../src/infra/errno.ts";
 import { isPidAlive } from "../../src/shared/pid-alive.ts";
 
 type LiveGatewayDistFenceResult = { refuse: true; message: string } | { refuse: false };
@@ -101,8 +102,22 @@ async function tryRealpath(value: string): Promise<string> {
   const resolved = path.resolve(value);
   try {
     return await fs.realpath(resolved);
-  } catch {
-    return resolved;
+  } catch (error) {
+    if (!hasErrnoCode(error, "ENOENT")) {
+      throw error;
+    }
+    // Missing output keeps its physical parent; dangling links never prove separation.
+    const entry = await fs.lstat(resolved).catch((failure: unknown) => {
+      if (!hasErrnoCode(failure, "ENOENT")) {
+        throw failure;
+      }
+      return null;
+    });
+    const parent = path.dirname(resolved);
+    if (entry || parent === resolved) {
+      throw error;
+    }
+    return path.join(await tryRealpath(parent), path.basename(resolved));
   }
 }
 
@@ -130,8 +145,14 @@ async function samePathIdentity(left: string, right: string): Promise<boolean> {
     return true;
   }
   const [leftStat, rightStat] = await Promise.all([
-    fs.stat(left).catch(() => null),
-    fs.stat(right).catch(() => null),
+    ...[left, right].map((file) =>
+      fs.stat(file).catch((error: unknown) => {
+        if (!hasErrnoCode(error, "ENOENT")) {
+          throw error;
+        }
+        return null;
+      }),
+    ),
   ]);
   return Boolean(
     leftStat && rightStat && leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino,
@@ -145,6 +166,7 @@ async function samePathIdentity(left: string, right: string): Promise<boolean> {
 export async function gatewayServiceCommandOverlapsPhysicalCheckout(
   checkoutRoot: string,
   command: GatewayServiceState["command"],
+  options: { requireVerified?: boolean } = {},
 ): Promise<boolean | null> {
   const runtime = await loadFenceRuntime();
   if (!runtime) {
@@ -162,9 +184,11 @@ export async function gatewayServiceCommandOverlapsPhysicalCheckout(
   }
 
   const checkoutDist = await tryRealpath(path.join(checkoutRoot, "dist"));
-  const checkoutDistStat = await fs.stat(checkoutDist).catch(() => null);
-  if (!checkoutDistStat?.isDirectory()) {
-    return false;
+  if (!options.requireVerified) {
+    const existing = await fs.stat(checkoutDist).catch(() => null);
+    if (!existing?.isDirectory()) {
+      return false;
+    }
   }
   const servingDist = await tryRealpath(path.join(servingRoot, "dist"));
   const servingEntryReal = await tryRealpath(servingEntry);
@@ -190,11 +214,12 @@ export async function gatewayServiceCommandOverlapsPhysicalCheckout(
 
 async function resolveFenceBindings(
   env: NodeJS.ProcessEnv,
+  requireComplete?: boolean,
 ): Promise<readonly ManagedGatewayBinding[] | null> {
   try {
     const current = bindingFromProcessEnv(env);
     const inspect = await import("../../src/daemon/managed-gateway-bindings.ts");
-    const discovered = await inspect.discoverManagedGatewayBindings(env);
+    const discovered = await inspect.discoverManagedGatewayBindings(env, { requireComplete });
     return dedupeBindings([current, ...discovered]);
   } catch {
     return null;
@@ -207,21 +232,49 @@ async function resolveFenceBindings(
  */
 export async function resolveLiveManagedGatewayDistFence(
   checkoutRoot: string,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; requireVerified?: boolean } = {},
 ): Promise<LiveGatewayDistFenceResult> {
   const env = options.env ?? process.env;
-  const bindings = await resolveFenceBindings(env);
+  const unknown = {
+    refuse: true,
+    message:
+      "[openclaw] Cannot verify that test preparation is separate from managed Gateway artifacts. Use the existing isolated test runner; no checkout artifacts were rebuilt.",
+  } as const;
+  const bindings = await resolveFenceBindings(env, options.requireVerified);
   if (!bindings) {
-    return { refuse: false };
+    return options.requireVerified ? unknown : { refuse: false };
   }
 
   const root = path.resolve(checkoutRoot);
   const holds: Array<{ profile: string; state: GatewayServiceState }> = [];
+  let unverified = false;
   for (const binding of bindings) {
     try {
       const runtime = await loadFenceRuntime();
       if (!runtime) {
+        unverified = true;
         continue;
+      }
+      if (options.requireVerified && process.platform === "linux") {
+        // Artifact separation needs the loaded command, not protected service credentials.
+        // An unavailable location never grants permission; the full owner may still prove absence.
+        const { readSystemdServiceCommandLocation } =
+          await import("../../src/daemon/systemd-service-files.ts");
+        const location = await readSystemdServiceCommandLocation(
+          binding.env,
+          binding.systemdReadTarget,
+        ).catch(() => undefined);
+        if (
+          location?.kind === "not-loaded" ||
+          (location?.kind === "command" &&
+            (await gatewayServiceCommandOverlapsPhysicalCheckout(
+              root,
+              location.command,
+              options,
+            )) === false)
+        ) {
+          continue;
+        }
       }
       // A discovered sibling keeps its own selectors, rather than ambient profile overrides.
       const state = await runtime.readGatewayServiceState(runtime.resolveGatewayService(), {
@@ -230,20 +283,34 @@ export async function resolveLiveManagedGatewayDistFence(
         requireLoadedCommand: true,
         ...(binding.systemdReadTarget ? { systemdReadTarget: binding.systemdReadTarget } : {}),
       });
-      const matches = await gatewayServiceCommandOverlapsPhysicalCheckout(root, state.command);
-      if (matches !== true) {
+      const matches = await gatewayServiceCommandOverlapsPhysicalCheckout(
+        root,
+        state.command,
+        options,
+      );
+      if (matches === false) {
+        continue;
+      }
+      if (matches === null) {
+        unverified ||= Boolean(
+          state.command ||
+          state.installed ||
+          state.loadState.status !== "not-loaded" ||
+          state.runtime?.missingUnit !== true,
+        );
         continue;
       }
       if (!isLiveManagedGatewayHoldingDist(state)) {
+        unverified ||= state.runtime?.status !== "stopped" || state.loadState.status === "unknown";
         continue;
       }
       holds.push({ profile: normalizeFenceProfile(binding.profile), state });
     } catch {
-      // Fail open per binding.
+      unverified = true;
     }
   }
   if (holds.length === 0) {
-    return { refuse: false };
+    return options.requireVerified && unverified ? unknown : { refuse: false };
   }
 
   const runtime = await loadFenceRuntime();

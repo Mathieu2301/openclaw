@@ -6,7 +6,6 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import { quoteCliArg } from "../cli/quote-cli-arg.js";
 import { getRootOptionAwareCommandPath } from "../infra/cli-root-options.js";
 import { isEnvAssignmentToken, resolveCarrierCommandArgv } from "../infra/command-carriers.js";
-import { hasErrnoCode } from "../infra/errno.js";
 import { classifyOpenClawArgv } from "../infra/gateway-process-argv.js";
 import {
   POSIX_INLINE_COMMAND_FLAGS,
@@ -34,6 +33,7 @@ import { resolveRuntimeScriptPosition } from "./runtime-binary.js";
 import { readScheduledTaskCommand, resolveTaskName } from "./schtasks-layout.js";
 import { listScheduledTasks } from "./schtasks-state-probe.js";
 import { resolveWindowsServiceCommandProfile } from "./service-env-merge.js";
+import { collectServiceFiles, type ServiceFileInspectionError } from "./service-file-inventory.js";
 import { resolveSystemdServiceName } from "./systemd-service-files.js";
 import {
   parseSystemdInlineEnvironment,
@@ -56,7 +56,7 @@ export type FindExtraGatewayServicesOptions = {
 
 export type GatewayServiceInventory = {
   services: ExtraGatewayService[];
-  errors: Array<{ source: string; message: string }>;
+  errors: ServiceFileInspectionError[];
 };
 
 type ManagedGatewayService = ExtraGatewayService & {
@@ -302,54 +302,12 @@ function isPotentialGatewayServiceName(
   );
 }
 
-type ServiceFileEntry = {
-  entry: string;
-  name: string;
-  fullPath: string;
-  contents: Buffer;
-};
-
-async function collectServiceFiles(params: {
-  dir: string;
-  extension: string;
-  isPotentialName: (name: string) => boolean;
-  errors?: GatewayServiceInventory["errors"];
-}): Promise<ServiceFileEntry[]> {
-  const out: ServiceFileEntry[] = [];
-  let entries: string[];
-  try {
-    entries = await fs.readdir(params.dir);
-  } catch (error) {
-    if (!hasErrnoCode(error, "ENOENT")) {
-      params.errors?.push({ source: params.dir, message: "Service path could not be inspected." });
-    }
-    return out;
-  }
-  for (const entry of entries.toSorted()) {
-    if (!entry.endsWith(params.extension)) {
-      continue;
-    }
-    const name = entry.slice(0, -params.extension.length);
-    const fullPath = path.join(params.dir, entry);
-    let contents: Buffer;
-    try {
-      contents = await fs.readFile(fullPath);
-    } catch {
-      if (params.isPotentialName(name)) {
-        params.errors?.push({ source: fullPath, message: "Service path could not be inspected." });
-      }
-      continue;
-    }
-    out.push({ entry, name, fullPath, contents });
-  }
-  return out;
-}
-
 async function scanLaunchdDir(params: {
   dir: string;
   scope: "user" | "system";
   managedLabel?: string;
   selectedName?: string;
+  requireComplete?: boolean;
   errors?: GatewayServiceInventory["errors"];
 }): Promise<InspectedGatewayService[]> {
   const results: InspectedGatewayService[] = [];
@@ -360,6 +318,7 @@ async function scanLaunchdDir(params: {
     extension: ".plist",
     isPotentialName,
     errors: params.errors,
+    requireComplete: params.requireComplete,
   });
 
   for (const { name: labelFromName, fullPath, contents } of candidates) {
@@ -368,6 +327,7 @@ async function scanLaunchdDir(params: {
         contents.toString("utf8").replaceAll("\0", ""),
       );
       if (
+        params.requireComplete ||
         isPotentialName(labelFromName) ||
         EXTRA_MARKERS.some((marker) => contentHint.includes(marker))
       ) {
@@ -420,6 +380,7 @@ async function scanSystemdDir(params: {
   dir: string;
   scope: "user" | "system";
   selectedName?: string;
+  requireComplete?: boolean;
   errors?: GatewayServiceInventory["errors"];
 }): Promise<InspectedGatewayService[]> {
   const results: InspectedGatewayService[] = [];
@@ -428,6 +389,7 @@ async function scanSystemdDir(params: {
     extension: ".service",
     isPotentialName: (name) => isPotentialGatewayServiceName(name, "linux", params.selectedName),
     errors: params.errors,
+    requireComplete: params.requireComplete,
   });
 
   for (const { entry, name, fullPath, contents: bytes } of candidates) {
@@ -488,6 +450,7 @@ export async function findSystemGatewayServices(): Promise<ExtraGatewayService[]
 async function scanGatewayServices(
   env: Record<string, string | undefined>,
   opts: FindExtraGatewayServicesOptions,
+  requireComplete = false,
 ): Promise<{ services: InspectedGatewayService[]; errors: GatewayServiceInventory["errors"] }> {
   const results: InspectedGatewayService[] = [];
   const errors: GatewayServiceInventory["errors"] = [];
@@ -511,6 +474,7 @@ async function scanGatewayServices(
         scope: "user",
         selectedName: resolveLaunchAgentLabel(env),
         errors,
+        requireComplete,
       })) {
         push(svc);
       }
@@ -520,6 +484,7 @@ async function scanGatewayServices(
           scope: "system",
           selectedName: resolveLaunchAgentLabel(env),
           errors,
+          requireComplete,
         })) {
           push(svc);
         }
@@ -529,6 +494,7 @@ async function scanGatewayServices(
           managedLabel: resolveLaunchAgentLabel(env),
           selectedName: resolveLaunchAgentLabel(env),
           errors,
+          requireComplete,
         })) {
           push(svc);
         }
@@ -548,6 +514,7 @@ async function scanGatewayServices(
         scope: "user",
         selectedName: resolveSystemdServiceName(env),
         errors,
+        requireComplete,
       });
       for (const svc of userServices) {
         push(svc);
@@ -584,6 +551,7 @@ async function scanGatewayServices(
             scope: "system",
             selectedName: resolveSystemdServiceName(env),
             errors,
+            requireComplete,
           })) {
             push(svc);
           }
@@ -624,6 +592,12 @@ async function scanGatewayServices(
       }
       const name = task.taskPath?.trim();
       if (!name) {
+        if (requireComplete) {
+          errors.push({
+            source: "schtasks",
+            message: "Scheduled Task identity could not be inspected.",
+          });
+        }
         continue;
       }
       const taskToRun =
@@ -639,7 +613,7 @@ async function scanGatewayServices(
         argv.some((arg) => /\.(?:cmd|vbs)$/i.test(arg) && detectLauncherGatewayMarker(arg)),
       );
       if (!task.actions?.length) {
-        if (selected || isOpenClawGatewayTaskName(name) || isLegacyLabel(name)) {
+        if (requireComplete || selected || isOpenClawGatewayTaskName(name) || isLegacyLabel(name)) {
           errors.push({ source: name, message: "Scheduled Task action could not be inspected." });
         }
         continue;
@@ -670,6 +644,9 @@ async function scanGatewayServices(
               },
             },
           );
+          if (requireComplete && !command) {
+            throw new Error("Registered launcher disappeared during inspection.");
+          }
           profile = command ? resolveWindowsServiceCommandProfile(command) : undefined;
           const serviceMarker = command?.environment?.OPENCLAW_SERVICE_MARKER;
           const serviceKind = command?.environment?.OPENCLAW_SERVICE_KIND;
@@ -693,6 +670,7 @@ async function scanGatewayServices(
             break;
           }
           if (
+            requireComplete ||
             selected ||
             isOpenClawGatewayTaskName(name) ||
             isLegacyLabel(name) ||
@@ -707,6 +685,10 @@ async function scanGatewayServices(
         }
       }
       if (!marker) {
+        continue;
+      }
+      if (requireComplete && marker === "openclaw" && gateway && profile?.kind !== "resolved") {
+        errors.push({ source: name, message: "Scheduled Task profile could not be inspected." });
         continue;
       }
       push({
@@ -746,8 +728,9 @@ export async function findExtraGatewayServices(
 /** Complete managed selectors are discovery facts, not native lifecycle authority. */
 export async function listManagedOpenClawGatewayServices(
   env: Record<string, string | undefined>,
+  options: { requireComplete?: boolean } = {},
 ): Promise<{ services: ManagedGatewayService[]; errors: GatewayServiceInventory["errors"] }> {
-  const inventory = await scanGatewayServices(env, { deep: true });
+  const inventory = await scanGatewayServices(env, { deep: true }, options.requireComplete);
   return {
     services: inventory.services
       .filter((service) => service.managedGateway)

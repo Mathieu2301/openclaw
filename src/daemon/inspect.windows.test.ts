@@ -229,6 +229,35 @@ describe("findExtraGatewayServices (win32)", () => {
     },
   );
 
+  it.each(["missing action", "unreadable launcher", "disappeared launcher", "multiple actions"])(
+    "does not silently omit a custom task from complete inventory: %s",
+    async (fault) => {
+      const label = "\\Custom Assistant";
+      const selected = task(label, "C:\\custom\\assistant.cmd", "");
+      if (fault === "missing action") {
+        selected.actions = [];
+      } else if (fault === "multiple actions") {
+        selected.actions = [0, 1].map(
+          () => task(label, "C:\\OpenClaw\\openclaw.exe", "gateway run").actions[0]!,
+        );
+      }
+      listScheduledTasksMock.mockReturnValue([selected]);
+      readScheduledTaskCommandMock.mockImplementation(async () => {
+        if (fault === "unreadable launcher") {
+          throw new Error("Access denied");
+        }
+        return null;
+      });
+      expect((await listManagedOpenClawGatewayServices({})).errors).toEqual([]);
+      const result = await listManagedOpenClawGatewayServices({}, { requireComplete: true });
+      expect(result.services).toEqual([]);
+      expect(result.errors).toEqual([
+        { source: label, message: expect.stringContaining("could not be inspected") },
+      ]);
+      expect(renderGatewayServiceCleanupHints(result.services)).toEqual([]);
+    },
+  );
+
   it("reports a recognizable launcher read failure without offering its deletion", async () => {
     listScheduledTasksMock.mockReturnValue([
       task("\\Custom Service", "C:\\fixtures\\service.cmd", ""),

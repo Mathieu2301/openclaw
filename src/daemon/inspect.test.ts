@@ -559,6 +559,31 @@ describe("managed Gateway inventory projections", () => {
   }
 
   it.each([
+    ["linux", ".config/systemd/user/custom-worker.service"],
+    ["darwin", "Library/LaunchAgents/org.example.custom-worker.plist"],
+  ] as const)(
+    "retains unreadable custom paths in complete %s inventories",
+    async (platform, relative) => {
+      Object.defineProperty(process, "platform", { configurable: true, value: platform });
+      const home = tempDirs.make("managed-unreadable-custom-");
+      isolateNativeRoots(home);
+      const unreadable = path.join(home, relative);
+      // A directory occupying a service file cannot be read, independent of CI user privileges.
+      await fs.mkdir(unreadable, { recursive: true });
+      await expect(listManagedOpenClawGatewayServices({ HOME: home })).resolves.toEqual({
+        services: [],
+        errors: [],
+      });
+      await expect(
+        listManagedOpenClawGatewayServices({ HOME: home }, { requireComplete: true }),
+      ).resolves.toEqual({
+        services: [],
+        errors: [{ source: unreadable, message: "Service path could not be inspected." }],
+      });
+    },
+  );
+
+  it.each([
     ["literal", "Environment=OPENCLAW_SERVICE_MARKER=openclaw OPENCLAW_SERVICE_KIND=gateway", true],
     [
       "spaced",

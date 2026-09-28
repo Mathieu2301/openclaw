@@ -524,6 +524,7 @@ export async function runBuildAllSteps(
   params: {
     cacheEnabled?: boolean;
     signal?: AbortSignal;
+    requireVerifiedGatewayFence?: boolean;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     finalizeCache?: typeof finalizeBuildStepCache;
@@ -553,6 +554,7 @@ export async function runBuildAllSteps(
   // enter here before clean:dist can delete hashed modules a live Gateway still imports.
   const fence = await resolveLiveManagedGatewayDistFence(params.cwd ?? process.cwd(), {
     env: buildEnv,
+    requireVerified: params.requireVerifiedGatewayFence,
   });
   params.signal?.throwIfAborted();
   if (fence.refuse) {

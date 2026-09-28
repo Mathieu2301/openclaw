@@ -29,10 +29,17 @@ export async function prepareTestRuntime(
         );
       }
       if (preparation.build) {
-        return (await runBuildAllSteps("qaRuntime", { cwd, env, signal })).exitCode;
+        return (
+          await runBuildAllSteps("qaRuntime", {
+            cwd,
+            env,
+            signal,
+            requireVerifiedGatewayFence: true,
+          })
+        ).exitCode;
       }
       if (preparation.runtime) {
-        const fence = await resolveLiveManagedGatewayDistFence(cwd, { env });
+        const fence = await resolveLiveManagedGatewayDistFence(cwd, { env, requireVerified: true });
         signal?.throwIfAborted();
         if (fence.refuse) {
           console.error(fence.message);
