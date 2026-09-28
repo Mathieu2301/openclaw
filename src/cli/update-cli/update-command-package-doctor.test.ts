@@ -51,6 +51,66 @@ async function createDoctorFixture() {
   return { root, env };
 }
 
+it.each(["missing", "malformed"] as const)(
+  "runs Doctor for a %s include without claiming automatic config rollback",
+  async (includeState) => {
+    const { root, env } = await createDoctorFixture();
+    const originalRaw = '{"logging":{"$include":"./logging.json"}}\n';
+    await fs.writeFile(env.OPENCLAW_CONFIG_PATH, originalRaw);
+    if (includeState === "malformed") {
+      await fs.writeFile(path.join(root, "logging.json"), '{"level": }\n');
+    }
+    const invokeDoctor = vi
+      .spyOn(processRunner, "runCommandWithTimeout")
+      .mockImplementation(async (argv, options) => {
+        expect(argv).toContain("doctor");
+        assert(typeof options === "object");
+        const resultPath = options.env?.[UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV];
+        assert(resultPath, "Missing Doctor result path");
+        await writeUpdatePostInstallDoctorResult({
+          resultPath,
+          result: { status: "ok", configHash: "unchanged" },
+        });
+        return {
+          code: 0,
+          stdout: "",
+          stderr: "",
+          signal: null,
+          killed: false,
+          termination: "exit",
+        };
+      });
+    const onConfigSnapshot = vi.fn();
+    const onStepComplete = vi.fn();
+
+    const step = await runPackageUpdateDoctor({
+      root,
+      timeoutMs: 1_000,
+      progress: { onStepComplete },
+      managedServiceEnv: env,
+      onConfigSnapshot,
+    });
+
+    expect(invokeDoctor).toHaveBeenCalledOnce();
+    expect(onConfigSnapshot).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        path: env.OPENCLAW_CONFIG_PATH,
+        raw: originalRaw,
+        doctorOwned: false,
+      }),
+    );
+    expect(step).toMatchObject({ exitCode: 0 });
+    expect(onStepComplete).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        warnings: expect.arrayContaining([
+          expect.stringContaining("automatic config rollback is unavailable"),
+        ]),
+      }),
+    );
+    await expect(fs.readFile(env.OPENCLAW_CONFIG_PATH, "utf8")).resolves.toBe(originalRaw);
+  },
+);
+
 it("does not spawn Doctor when the installed runtime has no entrypoint", async () => {
   const { root, env } = await createDoctorFixture();
   await fs.rm(path.join(root, "dist", "entry.js"));
